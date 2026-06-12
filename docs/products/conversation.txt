@@ -1,0 +1,221 @@
+[9:34 AM] Bùi Trung Hiếu (VSF-PMDC&CTM-DL&AI)
+Chào anh em, anh đang có đề bài từ các sếp bên trên và anh sẽ phụ trách shadow working và các em sẽ là người nghiên cứu chính. Bài toán cho đầu vinhome về việc xây dung harness cho cowork agents để tự động học hỏi từ thói quen user và tự động đóng gói thành skills.
+ 
+[9:34 AM] Bùi Trung Hiếu (VSF-PMDC&CTM-DL&AI)
+
+Về phần của anh 
+1. Anh muốn tất cả mọi NV đều sử dụng AI vào TẤT CẢ các điểm chạm trong công việc. Cho dù NV có không sử dụng thì con AI nó nó phải TỰ ĐỘNG lưu lại các thao tác của NV trên máy tính. 
+2. NV hoặc hệ thống phải tư động replicate lại các skills đó. 
+3. Cứ lđ cao hơn thì phải nắm toàn bộ NS cấp dưới 
+4. Báo cáo
+- 1. Skills và các tốc độ xử lí cv của từng bạn 
+2. Dashboard nhìn được tổng quan toàn bộ utilization (một bạn sủ dụng AI và các phần mềm khác bn tiếng / ngày) 
+2. productivity - 1 bạn làm 1 việc mất bn phút. Categorize theo việc thường xuyên (đã lặp lại) và việc phát sinh. 
+3. Compliance - các việc các bạn làm đã đúng quy trình chưa. Có sai khác với quy trình quy định không.
+ 
+[9:35 AM] Bùi Trung Hiếu (VSF-PMDC&CTM-DL&AI)
+
+[Wednesday 7:15 PM] Phạm Khánh Hòa (VSF-AIPM-AIDNHT)
+
+2. NV hoặc hệ thống phải tư động replicate lại các skills đó.
+
+=> việc tạo quy trình, tác vụ thành skill hiện phải làm thủ công. Chưa cho phép tự động trên Claude.
+
+Hiện có các AI khác đã có khả năng tự học, tự phân tích vận hành và tạo skill. Tuy nhiên để xây dựng lên Claude sẽ khá phức tạp. 
+
+Phan Hồ Hà Phương (VSF-GD-CGCC) 
+
+anh cho intern research theo hướng dùng claude-mem để lưu all session. 
+
+Có thể cần thêm 1 con index knowledge graph cho các phiên session xử lý.
+ 
+sau đó dùng 1 con meta agent nào đó, theo hướng dream, hoặc giong Hermes agent để search pattern và đúc rút thành skill, tự tối ưu. 
+
+Việc trigger meta agent có thể dùng scheduler mà Claude Desktop hỗ trợ, hoặc manual.
+ 
+ 
+[9:35 AM] Bùi Trung Hiếu (VSF-PMDC&CTM-DL&AI)
+
+[Yesterday 6:05 PM] Phạm Khánh Hòa (VSF-AIPM-AIDNHT)
+
+Phạm Khánh Hòa (VSF-AIPM-AIDNHT)
+
+2. NV hoặc hệ thống phải tư động replicate lại các skills đó.  => việc tạo quy trình, tác vụ thành skill hiện phải làm thủ công. Chưa cho phép tự động trên Claude. Hiện có các AI khác đã có khả năn…
+
+Bùi Trung Hiếu (VSF-PMDC&CTM-DL&AI)
+
+bài toán gốc và hướng lời giải mà anh đang nghĩ sơ bộ đây. Giải pháp thực tế thì chắc cần ae research và đánh giá. 
+
+Anh sẽ đồng hành trong việc review hướng các bạn research.
+ 
+Mục tiêu gốc là: 
+
+nhân viên vinhomes chạy 1 thời gian, mình phân tích lại các common patterns và chuyển hóa thành skills, báo cáo, mô tả cho người ta chọn lưu lại hay không.
+ 
+[Yesterday 6:14 PM] Phạm Khánh Hòa (VSF-AIPM-AIDNHT)
+
+Bùi Trung Hiếu (VSF-PMDC&CTM-DL&AI) note là em chỉ được shadow. Lên hướng và review kết quả, review cách tiếp cận của các bạn. Thực thi phải 100% intern.
+ 
+Deadline (Dự kiến):
+hết hôm nay báo cáo tính khả thi
+
+thứ 2 bản sơ bộ 
+
+thứ 3 bản test kỹ 
+
+trong ngày t4 hoàn thiện gửi CBLD
+ 
+Anh cần Chu Ba Tuan Anh (S.AI.20K) và 1/2 bạn nữa follow theo đề bài này. Các bạn xem đề bài và draft bên dưới anh gửi rồi tự assign trước. Nếu không có ai thì tầm 10 phút nữa anh ra pick nhé
+Xin phép tag Everyone
+ 
+ 
+ Draft brainstorming idea
+# Phương án: Tự động đúc rút Skill từ quá trình sử dụng Claude Cowork
+**Mục tiêu:** Nhân viên dùng Cowork một thời gian → hệ thống tự phân tích lại các phiên làm việc → đúc rút quy trình lặp lại thành Skill → đưa vào sử dụng chung cho giai đoạn tiếp theo.
+**Ngày soạn:** 12/06/2026
+---
+## 1. Đánh giá lại các giả định ban đầu
+Trước khi chốt kiến trúc, cần điều chỉnh một vài giả định trong hướng xử lý ban đầu, vì hệ sinh thái Claude đã thay đổi nhanh trong 6 tháng qua:
+**Giả định "việc tạo skill hiện phải làm thủ công, chưa tự động được" — đã lỗi thời một phần.** Hiện đã có các meta-skill chính thức và cộng đồng làm việc này ở mức bán tự động:
+- `skill-creator` (Anthropic) — skill chuyên tạo/sửa/đánh giá skill khác, có cả benchmark và tối ưu mô tả trigger.
+- `/run-skill-generator` — skill bundled trong Claude Code, tự ghi lại "công thức" chạy một quy trình từ môi trường sạch rồi commit thành skill cho project.
+- Các skill cộng đồng kiểu `generating-skills-from-logs` — phân tích session history + CLI history rồi tự đề xuất và sinh ra skill hoàn chỉnh.
+Cái **chưa có sẵn** là: khai thác chéo nhiều người dùng (org-wide), chấm điểm pattern nào đáng đúc thành skill, và vòng quản trị (review → publish → phân phối). Đây mới là phần ta cần tự xây — và nó nhẹ hơn nhiều so với "xây một AI tự học từ đầu".
+**Giả định "cần knowledge graph index" — nên hoãn (YAGNI).** claude-mem đã có sẵn SQLite (metadata có cấu trúc) + vector store (Chroma) cho semantic search. Với mục tiêu "tìm pattern lặp lại trong các phiên", search ngữ nghĩa + group theo metadata (user, project, tool sequence) là đủ cho v1. Knowledge graph chỉ đáng đầu tư khi cần liên kết thực thể chéo hệ thống (ví dụ: cùng một quy trình "đối chiếu hóa đơn" xuất hiện dưới nhiều tên gọi ở VP và VHM). Đưa vào Phase 3, không đưa vào MVP.
+**Giả định "trigger bằng scheduler của Claude Desktop" — đúng nhưng có giới hạn cần biết.** Cowork đã có scheduled tasks (`/schedule`, từ 25/02/2026), tuy nhiên **chỉ chạy khi máy của người dùng đang thức và Claude Desktop đang mở**. Với meta-agent chạy ở cấp tổ chức, nên cân nhắc chạy tập trung trên một máy chủ/máy dedicated bằng Claude Code headless (`claude -p` + cron) hoặc cloud scheduled tasks của Claude Code, thay vì phụ thuộc laptop nhân viên.
+**Điểm rủi ro kỹ thuật cần intern xác minh sớm:** claude-mem là **plugin của Claude Code**, hoạt động dựa trên 5 lifecycle hooks (SessionStart, UserPromptSubmit, PostToolUse, Stop, SessionEnd). Cowork hỗ trợ plugin (bundle skills + connectors + sub-agents), nhưng cần kiểm chứng xem hooks của claude-mem có chạy đầy đủ trong môi trường Cowork hay không. Nếu không, fallback là dùng chính transcript/session memory mà Cowork lưu cục bộ, hoặc dùng "wrap-up skill" (mô tả ở Phase 0).
+---
+## 2. Kiến trúc đề xuất: 3 tầng + 1 vòng quản trị
+```
+┌─────────────────────────────────────────────────────────────┐
+│  TẦNG 1 — CAPTURE (trên máy mỗi nhân viên)                  │
+│  claude-mem (hoặc wrap-up skill) ghi lại observations        │
+│  → SQLite + vector store cục bộ                              │
+│  → Scheduled task hằng ngày: xuất session summaries          │
+│    (đã lọc dữ liệu nhạy cảm) → push lên repo/share chung     │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  TẦNG 2 — CONSOLIDATION (kho tập trung)                     │
+│  Git repo / SharePoint: session summaries theo user/tuần     │
+│  Index: SQLite + embeddings (KG: hoãn đến Phase 3)           │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  TẦNG 3 — META-AGENT ("dream cycle", chạy hàng tuần)        │
+│  Claude Code headless / Cowork scheduled task trên máy chủ   │
+│  1. Mine pattern: quy trình lặp ≥ N lần, chuỗi tool ổn định  │
+│  2. Chấm điểm ứng viên (frequency × effort saved × stability)│
+│  3. Dùng skill-creator để draft SKILL.md + scripts           │
+│  4. Đẩy vào REVIEW QUEUE (pull request)                      │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  VÒNG QUẢN TRỊ (human-in-the-loop)                          │
+│  Skill owner review PR → merge → publish plugin marketplace  │
+│  → nhân viên nhận skill mới qua plugin update                │
+└─────────────────────────────────────────────────────────────┘
+```
+### Tầng 1 — Capture
+Hai lựa chọn, có thể chạy song song:
+**Lựa chọn A — claude-mem (tự động, giàu dữ liệu).** Hook `PostToolUse` ghi lại mọi tool call (file đọc, lệnh chạy, lỗi gặp), background worker nén thành observations bằng AI, lưu SQLite + vector DB cục bộ. Ưu điểm: không cần nhân viên làm gì, dữ liệu chi tiết đến mức chuỗi thao tác. Nhược điểm: cần xác minh tương thích Cowork; dữ liệu thô có thể chứa thông tin nhạy cảm.
+**Lựa chọn B — Wrap-up skill (chủ động, nhẹ, chắc chắn chạy được trong Cowork).** Một skill nội bộ `session-wrapup`: cuối mỗi phiên làm việc đáng kể, nhân viên gõ `/wrapup` (hoặc skill tự trigger khi phát hiện task hoàn tất), Claude tự tóm tắt: mục tiêu phiên, các bước đã làm, tool/connector đã dùng, chỗ vướng và cách xử lý, đánh giá "quy trình này có lặp lại không". Output là một file markdown chuẩn hóa (schema cố định) lưu vào thư mục đồng bộ. Ưu điểm: triển khai được ngay tuần này, kiểm soát được nội dung xuất ra. Nhược điểm: phụ thuộc kỷ luật người dùng (giảm thiểu bằng cách nhúng vào quy trình/KPI thử nghiệm).
+Khuyến nghị: **bắt đầu bằng B, pilot A song song trên nhóm nhỏ** (5–10 người dùng Claude Code/Cowork thành thạo).
+### Tầng 2 — Consolidation
+- Mỗi máy có một scheduled task hằng ngày: gom summaries mới → chạy bước **lọc dữ liệu nhạy cảm** (PII, số liệu tài chính, tên khách hàng — chính bước này cũng là một skill) → push lên git repo trung tâm (hoặc SharePoint, tận dụng hạ tầng Graph API sẵn có của V-APP 2).
+- Repo trung tâm tổ chức theo `summaries/{username}/{yyyy-ww}/`.
+- Index tập trung: một job đơn giản nạp summaries vào SQLite + embeddings để meta-agent search. Không cần KG ở giai đoạn này.
+### Tầng 3 — Meta-agent (chu trình "dream")
+Ý tưởng "dream/Hermes" về bản chất là **sleep-time consolidation**: agent chạy offline, đọc lại trải nghiệm, đúc rút thành tri thức tái sử dụng. Không cần framework đặc thù — một phiên Claude Code headless chạy theo lịch với prompt + skill phù hợp là đủ:
+**Lịch chạy:** hàng tuần (cuối tuần), trên máy chủ dedicated. Dùng cron + `claude -p` hoặc cloud scheduled tasks; tránh phụ thuộc scheduler của Claude Desktop trên máy cá nhân vì giới hạn "máy phải thức, app phải mở".
+**Pipeline của một chu trình:**
+1. **Mine** — search index tìm các quy trình lặp: cùng mục tiêu xuất hiện ở ≥ 3 phiên hoặc ≥ 2 người dùng; chuỗi tool/bước ổn định; có "bài học sửa lỗi" (chỗ Claude làm sai rồi được người dùng chỉnh — đây là tri thức giá trị nhất để đưa vào skill).
+2. **Score** — chấm điểm ứng viên theo công thức đơn giản: `tần suất × thời gian tiết kiệm ước tính × độ ổn định của quy trình − độ rủi ro (dữ liệu nhạy cảm, thao tác ghi/xóa)`. Chỉ những ứng viên trên ngưỡng mới đi tiếp.
+3. **Draft** — gọi `skill-creator` để sinh `SKILL.md` (mô tả trigger song ngữ Việt–Anh như các skill nội bộ hiện có, ví dụ pattern của `vingroup-leave`), kèm scripts/templates nếu cần, kèm 3–5 test case ("golden questions") để đánh giá skill.
+4. **Self-eval** — chạy thử skill draft trên test case (skill-creator hỗ trợ eval), ghi kết quả vào PR description.
+5. **Submit** — mở pull request vào repo `cowork-skills` của công ty. **Meta-agent không bao giờ tự publish.**
+**Ngoài tạo mới, meta-agent còn làm 2 việc:** (a) đề xuất **cải tiến skill hiện có** khi thấy người dùng liên tục phải sửa output của một skill; (b) đề xuất **gộp/loại bỏ** skill trùng lặp hoặc không ai dùng (đo qua tần suất xuất hiện trong summaries).
+### Vòng quản trị (bắt buộc, không bỏ)
+Skill về bản chất là **instruction injection** vào agent — skill kém chất lượng hoặc bị nhồi nội dung độc hại sẽ ảnh hưởng mọi người dùng nó. Do đó:
+- Mỗi domain (kế toán, HR, IT…) có 1 **skill owner** review PR: kiểm tra tính đúng nghiệp vụ, mô tả trigger không đụng độ skill khác, không chứa dữ liệu nhạy cảm, thao tác ghi/xóa có bước confirm.
+- Merge → CI đóng gói thành **plugin** nội bộ (plugin = bundle skills + connectors + sub-agents) → publish lên marketplace nội bộ → nhân viên cập nhật qua plugin update. Versioning theo semver trong frontmatter của SKILL.md.
+- Theo dõi sau phát hành: meta-agent tuần sau đọc summaries để xem skill mới có được trigger đúng không, có bị nhân viên "sửa tay" output không → vòng lặp tự tối ưu.
+---
+## 3. Lộ trình triển khai
+**Phase 0 — Thủ công có cấu trúc (tuần 1–2).** Tạo `session-wrapup` skill + repo `cowork-skills` + quy trình PR review. Nhân viên tự đề cử quy trình đáng đúc thành skill; dùng `skill-creator` tạo thủ công 3–5 skill đầu tiên. Mục đích: dựng xương sống quản trị trước khi tự động hóa, và có ngay giá trị để báo cáo lãnh đạo.
+**Phase 1 — Capture tự động (tuần 2–4).** Intern pilot claude-mem trên nhóm nhỏ: xác minh tương thích Cowork (nếu không tương thích → đánh giá session memory/transcript có sẵn của Cowork làm nguồn thay thế); dựng scheduled task xuất + lọc + push summaries; dựng index tập trung. Deliverable của intern: báo cáo tương thích + script export chuẩn hóa.
+**Phase 2 — Meta-agent (tuần 4–8).** Dựng máy chủ chạy chu trình tuần; viết prompt mining + công thức scoring; nối với skill-creator và quy trình PR. Chạy song song với đề cử thủ công 1 tháng, so sánh chất lượng skill do meta-agent đề xuất với skill do người đề cử.
+**Phase 3 — Mở rộng (khi có nhu cầu thực).** Knowledge graph index nếu cần liên kết quy trình chéo entity VP/VHM; dashboard đo lường (skill nào dùng nhiều, tiết kiệm bao nhiêu); mở rộng nguồn capture sang Claude Code của đội kỹ thuật.
+---
+## 4. Rủi ro chính và biện pháp
+| Rủi ro | Mức độ | Biện pháp |
+|---|---|---|
+| claude-mem không chạy đủ hooks trong Cowork | Cao (chặn Phase 1 lựa chọn A) | Xác minh tuần đầu; fallback: wrap-up skill + transcript Cowork |
+| Session data chứa dữ liệu nhạy cảm (tài chính, nhân sự, khách hàng) | Cao | Bước lọc PII/nhạy cảm trước khi rời máy nhân viên; summaries lưu nội bộ; review của skill owner là chốt chặn cuối |
+| Skill do AI sinh ra sai nghiệp vụ (đặc biệt kế toán/thuế) | Cao | Human-in-the-loop bắt buộc; golden test cases; skill thao tác ghi/xóa phải có bước confirm |
+| Mô tả trigger các skill đụng độ nhau khi số lượng tăng | Trung bình | skill-creator có chức năng tối ưu description; meta-agent định kỳ audit overlap |
+| Tốn token: mỗi scheduled task là một phiên Cowork đầy đủ | Trung bình | Gom batch (export 1 lần/ngày thay vì mỗi phiên); meta-agent chạy tuần, không chạy ngày |
+| Nhân viên không chạy wrap-up | Trung bình | Nhúng vào quy trình nghiệm thu task; song song pilot claude-mem để tự động hóa hẳn |
+| Phụ thuộc scheduler local của Desktop | Thấp | Meta-agent chạy tập trung trên máy chủ bằng headless/cron |
+---
+## 5. Việc giao intern (cụ thể)
+1. Cài claude-mem trên 2 máy test (1 Claude Code, 1 Cowork), xác minh 5 hooks có ghi observations trong Cowork không. Báo cáo trong 3 ngày.
+2. Viết script export: đọc SQLite của claude-mem (hoặc transcript Cowork) → sinh summary markdown theo schema chuẩn → chạy bước lọc nhạy cảm → push git.
+3. Dựng repo `cowork-skills` + template PR + viết skill `session-wrapup` (dùng skill-creator).
+4. Thu thập 2 tuần dữ liệu từ nhóm pilot → chạy thử prompt mining thủ công 1 lần (chưa cần scheduler) → đánh giá: tìm ra được bao nhiêu pattern, bao nhiêu đáng làm skill.
+Kết quả bước 4 quyết định có đầu tư Phase 2 đầy đủ hay không — đây là điểm kiểm chứng rẻ nhất cho toàn bộ phương án.
+ 
+Sau discuss em confirm có bạn Nguyen Que Son (S.AI.20K) và Tran Ngoc Hung (S.AI.20K) join ạ
+ 
+Vì chưa biết được công việc / workflow thực tế của NV Vinhomes, nên bọn em sẽ giả lập 1 job như tạo thao tác tạo ticket hoặc các job khác để trace lại log đúng không ạ
+ 
+Oke anh em. Anh ntt nhé. Mục tiêu của mình cuối ngày là chốt tính khả thi và định hướng nghiên cứu, thử nghiệm nha. Mọi người AB trực tiếp trên dữ lieu log that nhé. Quy tình thì mọi người cần common hóa nó, không gắn vào quy trình cụ thể. Skill chỉ ần biết với tập hành vi và tương tác này thì ra skill gì. 
+ 
+Hành vi ở đây có thể phân loại:
+Hành vi chốt decisions
+Hành vi kém hiệu quả (lỗi sai lặp lại nhiều lần)
+Hành vi nhận thức hệ thống (Thường xuyên viết prompt quá dài/quá chung chung hoặc lặp đi lặp lại prompt)
+Hành vi điều phối quy trình bình thường
+Các điểm mình cần bắt là: quy trình lặp lại, cái gì sai? cái gì kém hiệu quả? Đó chính là những highest value mà mình dẽ quan sát với ít effort nhất. Cao cpas hơn thì có thể đề xuất tối ưu quy trình: nhưng cái này yêu cầu agent phải hiểu hành vi và nghiệp vụ người dunghf. Đôi khi chỉ từ session chat thì sẽ không đủ context để nhận diện toàn bộ business/mục đích của hành vi. Nên dữ lieu này chỉ dung ở mức log, quan sát trong delta T rồi đưa ra gợi ý thay vì chủ động tạo skills.
+ 
+Chỗ này anh phản biện nhé: Mình xây dung tổng quan để cover cho nhiều UC, đừng bị couples với business quá. business chỉ là sidecar, cái chính của mình vẫn là user behavior. Đưa ngữ cảnh business vào quá sớm từ bước reasoning có thể làm chệch hướng suy luận và mất tính độc lập đánh giá của agents.
+Chu Ba Tuan Anh (S.AI.20K)
+Vì chưa biết được công việc / workflow thực tế của NV Vinhomes, nên bọn em sẽ giả lập 1 job như tạo thao tác tạo ticket hoặc các job khác để trace lại log đúng không ạ
+ 
+ 
+Kiểu workflow run mà trong hình dung của anh sẽ thế này: Finding agents -> Judment Agents -> Critique Agents -> Consolidator agent + (business critique + consolidator) agents -> final consolidator agents
+ 
+theo em hiểu thì user behavior sẽ theo từng job cụ thể được chia theo domain do nhân viên đó PIC, vậy nếu mình cover nhiều use case, thì cần clear là cover theo behavior persona của 1 nhân viên đúng không ạ. 
+Và với cách phân loại các behav như bên trên, theo em hiểu:
+agent sẽ log lại các hành vi hiệu quả: lần sau khi gặp task tương tự -> làm lại tương tự cách làm cũ
+agent log lại các hành vi kém hiệu quả, lỗi: lần sau khi gặp task, tránh lỗi cũ
+ 
+ 
+Chu Ba Tuan Anh (S.AI.20K)
+theo em hiểu thì user behavior sẽ theo từng job cụ thể được chia theo domain do nhân viên đó PIC, vậy nếu mình cover nhiều use case, thì cần clear là cover theo behavior persona của 1 nhân viên đúng…
+Yes em ơi. Cái này hiện giờ chỉ là đóng vai trò tối ưu cho quy trình của chính user trên máy đó. Đến Meta Agent (mà mình chưa làm) thì nó mới hội tụ
+ 
+ 
+In Addition: Cần nắm bắt được workflow của user thường dung nhé em (Ngay từ khi chưa tiêm nghiệp vụ vào)
+ 
+ 
+Về cơ chế tổ chức skills thì anh thường viết theo nguyên lý:
+Maximum deterministic actions using script
+Heuristic/reasoning using llm judgement
+Hook to guard or provide additional context on contact point behavior of himan and agents
+GitHub - hieubui2409/human-analyzer: Character Profile Intelligence System - A clinical-grade system…
+GitHub - hieubui2409/product-spec: An AI-powered harness for Claude Code to define, strictly validat…
+GitHub - hieubui2409/human-analyzer: Character Profile Intelligence System - A clinical-grade system that turns deep, evidence-backed psychological profiles of characters into platform-native conte...
+Character Profile Intelligence System - A clinical-grade system that turns deep, evidence-backed psychological profiles of characters into platform-native content. Built to scale from a handful of ...
+ 
+Anh em có thể tham khảo cái human-analyzer là skill anh cũng viết phân tích về con người
+Nghĩa là: Skills vẫn do agent viết, nhưng mình sẽ phải trả lời các câu hỏi:
+Khi nào thì viết
+Viết như thế nào
+Có tính sử dung không (kiểm thử unitest cho tính đúng đắn, e2e cho hành vi người dung, eval golden tét cho hành vi llm)
+...
+ 
+Em xin phép nhờ anh Bùi Trung Hiếu (VSF-PMDC&CTM-DL&AI) confirm, bài toán gốc sẽ là: Làm sao biến hành vi làm việc của nhân viên thành tri thức có thể tái sử dụng.
+ 
+Yes em ơi, tạm thời là có thể replicate (có chọn lọc) trên máy chính user đó và tối ưu cho agent sử dung. Nhưng anh em phải để open gate cho phase meta nhé
+ 
