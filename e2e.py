@@ -37,6 +37,8 @@ def main() -> None:
         "--sessions-dir",
         help="Skip scan.py and use this existing sessions directory instead.",
     )
+    parser.add_argument("--min-recurrence", default="2")
+    parser.add_argument("--max-deepdive", default="5")
     args = parser.parse_args()
 
     _run("uv", "sync")
@@ -52,6 +54,8 @@ def main() -> None:
         sys.executable, "scripts/judge.py",
         "--sessions-dir", str(sessions_dir),
         "--top-candidates", "5",
+        "--min-recurrence", str(args.min_recurrence),
+        "--max-deepdive", str(args.max_deepdive),
     )
     judge_dir = _latest("judge_*")
     print(f"[e2e] judge: {judge_dir}")

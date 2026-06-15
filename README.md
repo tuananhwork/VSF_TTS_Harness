@@ -26,15 +26,27 @@ uv run python scripts/scan.py
 Mặc định scan ngày hôm nay; xem `TARGET_DATE` trong `scripts/scan.py` để đổi.
 Output: `data/sessions_<date>_runAt_<runTs>/`.
 
-### 2) Judge — cluster + LLM-as-judge → candidate skills
+### 2) Judge — 2-pass LLM-as-judge → candidate skills
 
 ```bash
 uv run python scripts/judge.py \
     --sessions-dir data/sessions_<date>_runAt_<runTs> \
-    --top-candidates 5
+    --top-candidates 5 --min-recurrence 2 --max-deepdive 5
 ```
 
+Hai lượt LLM:
+- **Triage** (trên summary + `tool_sequence` + `intent_seeds`): gom task lặp lại,
+  gắn `skill_type` (`process_macro` | `improvement_lesson`).
+- **Recurrence guard** (code): loại candidate có < `min-recurrence` session.
+- **Deep-dive** (trên full trace của từng candidate): trích flow **có thứ tự**,
+  điểm tốt / chưa tốt / cải tiến.
+
 Output: `data/judge_<date>/{cluster_summary.json, pattern_report.md, candidate_skills.json}`.
+
+Hai loại skill sinh ra:
+- **process_macro**: đóng gói flow tốt hay lặp lại để gọi lại nhanh.
+- **improvement_lesson**: bài học từ session lắm retry/correction — "lần sau làm X
+  trước để tránh Y".
 
 ### 3) Synth — sinh skill draft + proposal
 
