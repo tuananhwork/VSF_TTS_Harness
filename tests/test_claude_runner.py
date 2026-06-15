@@ -10,10 +10,29 @@ import pytest
 
 from _lib.claude_runner import (
     ClaudeRunError,
+    _strip_ccs_wrapper,
     extract_json_block,
     run_claude,
     run_claude_json,
 )
+
+
+def _ccs_box(body: str, *, success: bool = True) -> str:
+    """A representative `ccs one` result-formatter box wrapping `body`."""
+    footer = "[OK] Delegation completed" if success else "[X] Delegation failed"
+    return (
+        "╭──────────────────────────────╮\n"
+        "│[i] Delegated to ONE (ccs:one)│\n"
+        "╰──────────────────────────────╯\n"
+        "\n"
+        "┌─────────────┬────────────────┐\n"
+        "│ Working Dir │ /tmp/x         │\n"
+        "│ Model       │ ONE            │\n"
+        "└─────────────┴────────────────┘\n"
+        f"{body}\n"
+        "\n"
+        f"{footer}\n"
+    )
 
 
 def test_extract_json_block_finds_array_in_prose() -> None:
@@ -31,21 +50,65 @@ def test_extract_json_block_raises_when_no_json() -> None:
         extract_json_block("no json here at all")
 
 
+def test_strip_ccs_wrapper_removes_box_and_footer() -> None:
+    assert _strip_ccs_wrapper(_ccs_box('{"x": 1}')) == '{"x": 1}'
+
+
+def test_strip_ccs_wrapper_drops_ascii_status_lines() -> None:
+    # If the box falls back to ASCII borders, the `[i]`/`[OK]` status lines must
+    # still be removed so they don't shadow the real JSON.
+    raw = (
+        "[i] Delegated to ONE (ccs:one)\n"
+        '[{"a": 1}]\n'
+        "[OK] Delegation completed\n"
+    )
+    assert _strip_ccs_wrapper(raw) == '[{"a": 1}]'
+
+
+def test_strip_ccs_wrapper_passthrough_plain() -> None:
+    assert _strip_ccs_wrapper("just text\nmore") == "just text\nmore"
+
+
+@patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
-def test_run_claude_returns_stdout(mock_run) -> None:
+def test_run_claude_returns_stripped_stdout(mock_run, _mock_cmd) -> None:
     mock_run.return_value = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout="hello", stderr=""
+        args=[], returncode=0, stdout=_ccs_box("hello"), stderr=""
     )
     assert run_claude("prompt", timeout=10) == "hello"
     mock_run.assert_called_once()
-    args, kwargs = mock_run.call_args
-    assert args[0][0] == "claude"
-    assert args[0][1] == "-p"
-    assert kwargs["timeout"] == 10
+    cmd = mock_run.call_args[0][0]
+    assert cmd == ["ccs", "one", "-p", "prompt"]
+    assert mock_run.call_args[1]["timeout"] == 10
 
 
+@patch.dict("os.environ", {}, clear=True)
+@patch("_lib.claude_runner.shutil.which", return_value="/fake/claude")
+@patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
-def test_run_claude_raises_on_nonzero_exit(mock_run) -> None:
+def test_run_claude_injects_ccs_claude_path(mock_run, _mock_cmd, _mock_which) -> None:
+    mock_run.return_value = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=_ccs_box("ok"), stderr=""
+    )
+    run_claude("prompt", timeout=5)
+    env = mock_run.call_args[1]["env"]
+    assert env["CCS_CLAUDE_PATH"] == "/fake/claude"
+
+
+@patch.dict("os.environ", {"CCS_CLAUDE_PATH": "/already/set"}, clear=True)
+@patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
+@patch("_lib.claude_runner.subprocess.run")
+def test_run_claude_respects_existing_ccs_claude_path(mock_run, _mock_cmd) -> None:
+    mock_run.return_value = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=_ccs_box("ok"), stderr=""
+    )
+    run_claude("prompt", timeout=5)
+    assert mock_run.call_args[1]["env"]["CCS_CLAUDE_PATH"] == "/already/set"
+
+
+@patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
+@patch("_lib.claude_runner.subprocess.run")
+def test_run_claude_raises_on_nonzero_exit(mock_run, _mock_cmd) -> None:
     mock_run.return_value = subprocess.CompletedProcess(
         args=[], returncode=1, stdout="", stderr="boom"
     )
@@ -53,31 +116,34 @@ def test_run_claude_raises_on_nonzero_exit(mock_run) -> None:
         run_claude("prompt", timeout=10)
 
 
+@patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
-def test_run_claude_json_parses_clean_output(mock_run) -> None:
+def test_run_claude_json_parses_wrapped_output(mock_run, _mock_cmd) -> None:
     mock_run.return_value = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout='[{"a": 1}]', stderr=""
+        args=[], returncode=0, stdout=_ccs_box('[{"a": 1}]'), stderr=""
     )
     assert run_claude_json("prompt") == [{"a": 1}]
 
 
+@patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
-def test_run_claude_json_retries_when_first_output_is_garbage(mock_run) -> None:
+def test_run_claude_json_retries_when_first_output_is_garbage(mock_run, _mock_cmd) -> None:
     mock_run.side_effect = [
         subprocess.CompletedProcess(
             args=[], returncode=0,
-            stdout="here's the thing without json", stderr="",
+            stdout=_ccs_box("here's the thing without json"), stderr="",
         ),
         subprocess.CompletedProcess(
-            args=[], returncode=0, stdout='[{"a": 1}]', stderr="",
+            args=[], returncode=0, stdout=_ccs_box('[{"a": 1}]'), stderr="",
         ),
     ]
     assert run_claude_json("prompt") == [{"a": 1}]
     assert mock_run.call_count == 2
 
 
+@patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
-def test_run_claude_json_propagates_second_failure(mock_run) -> None:
+def test_run_claude_json_propagates_second_failure(mock_run, _mock_cmd) -> None:
     mock_run.side_effect = [
         subprocess.CompletedProcess(
             args=[], returncode=0, stdout="garbage 1", stderr=""

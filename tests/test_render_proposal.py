@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import yaml
+
 from _lib.render_proposal import render_pattern_report
 
 
@@ -36,6 +38,13 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
             "improvement_notes": "lần sau hỏi rõ độ dài mong muốn trước",
             "risk_flags": [],
             "rejected_reason": None,
+            "debate": [
+                {"judge": "efficiency", "stance": "approve", "axis_score": 5,
+                 "argument": "tốn 12 lượt chat lặp lại"},
+                {"judge": "quality", "stance": "approve", "axis_score": 4,
+                 "argument": "user phải sửa sai 4 lần"},
+            ],
+            "consolidator_note": "Phê duyệt: flow lặp lại, đáng đóng gói",
         }
     ]
     md = render_pattern_report(
@@ -53,6 +62,10 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
     assert "phải làm lại 3 lần vì thiếu ngữ cảnh" in md
     assert "lần sau hỏi rõ độ dài mong muốn trước" in md
     assert "## Top candidates" in md or "## Candidates" in md
+    # Cách B: debate verdicts + consolidator note surfaced for the human reviewer.
+    assert "efficiency" in md and "quality" in md
+    assert "tốn 12 lượt chat lặp lại" in md
+    assert "Phê duyệt: flow lặp lại, đáng đóng gói" in md
 
 
 from pathlib import Path
@@ -78,12 +91,51 @@ def test_render_skill_dir_writes_skill_and_golden_tests(tmp_path: Path) -> None:
         candidate=candidate, filled=filled,
         output_dir=tmp_path, generated_on="2026-06-13",
     )
+    # Folder name is slugified to a spec-valid skill name (no underscores).
+    assert out.name == "summarize-pdf"
     skill_md = (out / "SKILL.md").read_text(encoding="utf-8")
     golden = (out / "golden_tests.md").read_text(encoding="utf-8")
-    assert "summarize_pdf" in skill_md
+    assert "name: summarize-pdf" in skill_md
     assert "khi cần tóm tắt PDF" in skill_md
     assert "1. read file" in skill_md
     assert "Q1" in golden and "E2" in golden
+
+
+def test_render_skill_dir_frontmatter_conforms_to_agent_skills_spec(tmp_path: Path) -> None:
+    """Frontmatter has only spec keys at top level; custom fields go under metadata."""
+    candidate = {
+        "name": "Summarize_PDF Report",  # messy name: caps, underscore, space
+        "skill_type": "process_macro",
+        "trigger_intent": {"vi": "khi cần tóm tắt PDF", "en": "when summarizing PDF"},
+        "behavior_class": "process",
+        "risk_flags": ["write_action"],
+        "evidence": {"session_ids": ["s1", "s2"]},
+    }
+    filled = {
+        "steps_markdown": "1. read\n2. summarize",
+        "golden_test_1": {"query": "Q1", "expected": "E1"},
+        "golden_test_2": {"query": "Q2", "expected": "E2"},
+        "golden_test_3": {"query": "Q3", "expected": "E3"},
+    }
+    out = render_skill_dir(
+        candidate=candidate, filled=filled,
+        output_dir=tmp_path, generated_on="2026-06-15",
+    )
+    assert out.name == "summarize-pdf-report"
+    skill_md = (out / "SKILL.md").read_text(encoding="utf-8")
+    front = skill_md.split("---", 2)[1]
+    data = yaml.safe_load(front)
+    # Only spec-allowed top-level keys.
+    assert set(data) <= {"name", "description", "license", "compatibility",
+                         "metadata", "allowed-tools"}
+    assert data["name"] == "summarize-pdf-report"
+    assert isinstance(data["description"], str) and 0 < len(data["description"]) <= 1024
+    assert "when summarizing PDF" in data["description"]
+    # Custom fields live under metadata, not at the top level.
+    assert "skill_type" not in data and "risk_flags" not in data
+    assert data["metadata"]["skill_type"] == "process_macro"
+    assert data["metadata"]["behavior_class"] == "process"
+    assert "write_action" in data["metadata"]["risk_flags"]
 
 
 def test_render_skill_dir_improvement_lesson_surfaces_weak_and_improve(tmp_path: Path) -> None:

@@ -2,11 +2,49 @@
 
 from __future__ import annotations
 
+import pytest
+
 from _lib.candidate_schema import (
     apply_recurrence_guard,
+    normalize_skill_name,
     normalize_skill_type,
+    slugify_skill_name,
     split_accepted,
 )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("summarize_pdf", "summarize-pdf"),       # snake_case -> kebab
+        ("Summarize PDF", "summarize-pdf"),        # caps + space
+        ("clean__data--export", "clean-data-export"),  # consecutive separators
+        ("-leading-and-trailing-", "leading-and-trailing"),
+        ("tóm_tắt_pdf!!!", "t-m-t-t-pdf"),         # non-ascii/punct -> hyphen
+        ("", "unnamed-skill"),                      # empty fallback
+        ("___", "unnamed-skill"),                   # all-separator fallback
+    ],
+)
+def test_slugify_skill_name(raw: str, expected: str) -> None:
+    assert slugify_skill_name(raw) == expected
+
+
+def test_slugify_skill_name_is_idempotent() -> None:
+    once = slugify_skill_name("Some Messy_Name")
+    assert slugify_skill_name(once) == once
+
+
+def test_slugify_skill_name_caps_length_without_trailing_hyphen() -> None:
+    out = slugify_skill_name("a-" * 50, max_len=64)
+    assert len(out) <= 64
+    assert not out.endswith("-")
+
+
+def test_normalize_skill_name_does_not_mutate_input() -> None:
+    c = {"name": "summarize_pdf"}
+    out = normalize_skill_name(c)
+    assert out["name"] == "summarize-pdf"
+    assert c["name"] == "summarize_pdf"
 
 
 def test_recurrence_guard_rejects_singleton_evidence() -> None:

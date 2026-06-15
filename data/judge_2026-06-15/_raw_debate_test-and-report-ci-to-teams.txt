@@ -1,0 +1,14 @@
+[
+  {
+    "judge": "efficiency",
+    "stance": "approve",
+    "axis_score": 5,
+    "argument": "Chuỗi rất dài và lặp gần như y hệt qua cả 3 session: ToolSearch → request_cowork_directory → search_mcp_registry → nhiều lượt mcp__workspace__bash chạy test → rồi loạt thao tác computer-use thủ công (open_application, write_clipboard, left_click, key, screenshot) để dán báo cáo vào Teams, kèm nhiều lần 'retry' screenshot. Đóng gói macro này cắt được hàng chục bước thủ công và việc gõ lại cùng một yêu cầu mỗi lần, nên tiết kiệm năng suất rất cao."
+  },
+  {
+    "judge": "quality",
+    "stance": "neutral",
+    "axis_score": 3,
+    "argument": "Chỉ có 1 correction ý định thật từ user (trace c740302f: 'phải dùng .venv... đừng dùng python global'), cho thấy thiếu ngữ cảnh môi trường mà skill có thể cố định. Các 'retry' còn lại đều ở bước screenshot computer-use (gửi Teams) — là flakiness thao tác desktop chứ không phải user phải sửa sai ý định, nên áp lực correction chỉ ở mức trung bình."
+  }
+]

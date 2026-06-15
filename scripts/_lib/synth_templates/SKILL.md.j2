@@ -1,13 +1,12 @@
 ---
 name: {{ name }}
-description: |
-  VI: {{ trigger_vi }}
-  EN: {{ trigger_en }}
-skill_type: {{ skill_type }}
-behavior_class: {{ behavior_class }}
-generated_by: pattern-mvp
-generated_on: {{ generated_on }}
-risk_flags: [{{ risk_flags | join(", ") }}]
+description: {{ description | tojson }}
+metadata:
+  skill_type: {{ skill_type }}
+  behavior_class: {{ behavior_class }}
+  generated_by: pattern-mvp
+  generated_on: {{ generated_on }}
+  risk_flags: {{ (risk_flags | join(", ")) | tojson }}
 ---
 
 # {{ name }}

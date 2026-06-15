@@ -28,7 +28,9 @@ lẻ). Mỗi group có:
 
 NHIỆM VỤ: tìm các task/flow LẶP LẠI xuyên TẤT CẢ session (merge session từ nhiều
 group nếu intent_seeds + tool_sequence giống nhau về ý nghĩa). Với mỗi pattern:
-1. Đặt `name` (snake_case, <= 30 ký tự, không trùng installed_skills).
+1. Đặt `name` (kebab-case theo chuẩn Agent Skills: chỉ a-z, 0-9 và dấu '-',
+   KHÔNG dùng '_', không bắt đầu/kết thúc bằng '-', <= 64 ký tự, không trùng
+   installed_skills).
 2. Gắn `skill_type`:
    - `process_macro`: flow tốt, lặp lại, đáng đóng gói để gọi lại nhanh.
    - `improvement_lesson`: nhóm có nhiều retry/correction (retry_rate cao hoặc
@@ -59,15 +61,21 @@ Output STRICT JSON array; schema mỗi phần tử:
 KHÔNG kèm prose ngoài JSON."""
 
 
-DEEPDIVE_INSTRUCTIONS = """PASS 2 — DEEP-DIVE (1 candidate, chạy trên FULL TRACE).
+# ── PASS 2 (Cách B debate) is three sub-steps: EXTRACT → JUDGES → CONSOLIDATE.
+#    See docs/products/agent-debate.md "Quyết định kiến trúc — Cách B".
+
+EXTRACT_INSTRUCTIONS = """PASS 2 · EXTRACT (1 candidate, chạy trên FULL TRACE).
+
+Bước này TRUNG LẬP: chỉ trích sự thật từ trace, KHÔNG chấm điểm, KHÔNG quyết định
+đóng gói hay không (việc đó dành cho các judge + consolidator ở bước sau).
 
 Bạn được cho 1 candidate đã qua triage + recurrence guard, kèm `traces`: trace
 CÓ THỨ TỰ của từng evidence session (mỗi bước là user request, chuỗi tool, hoặc
 chỗ user `correction`/Claude `retry`).
 
-NHIỆM VỤ — đọc kỹ trace rồi:
-1. `action_template`: trích flow CHUẨN theo ĐÚNG THỨ TỰ (bước 1→2→3→4), bám
-   `tools` trong trace. KHÔNG đảo thứ tự. Mỗi bước: {"step", "tool", "input_shape"}.
+NHIỆM VỤ — đọc kỹ trace rồi trích:
+1. `action_template`: flow CHUẨN theo ĐÚNG THỨ TỰ (bước 1→2→3→4), bám `tools`
+   trong trace. KHÔNG đảo thứ tự. Mỗi bước: {"step", "tool", "input_shape"}.
 2. `good_points`: cách làm tốt rút ra từ trace (1-4 ý).
 3. `weak_points`: điểm chưa tốt — chỗ nào user phải sửa/làm lại là BẰNG CHỨNG cụ
    thể (trích dẫn). Với skill_type = improvement_lesson, đây là phần trọng tâm.
@@ -75,12 +83,67 @@ NHIỆM VỤ — đọc kỹ trace rồi:
    không khuyên chung chung). BẮT BUỘC non-empty nếu skill_type = improvement_lesson.
 5. `golden_tests`: 3 cặp {query, expected} dựng từ evidence.
 6. `risk_flags` ⊆ {write_action, deletes_files, external_api, sends_message}.
-7. `final_score`: recurrence / cohesion / personalization (1-5).
-8. Tự critique: nếu sau khi xem trace thấy KHÔNG phải pattern thật, set
-   `rejected_reason` = "not_a_pattern" hoặc "low_score".
 
-Output STRICT JSON object (1 candidate đã làm giàu), thêm các field trên vào
-candidate. KHÔNG kèm prose ngoài JSON."""
+Output STRICT JSON object đúng 6 field trên. KHÔNG kèm prose ngoài JSON."""
+
+
+# Each judge argues ONE value axis. MVP runs efficiency + quality (cùng phe —
+# xem đánh đổi đã ghi trong agent-debate.md). cost/business để pending: thêm vào
+# JUDGES khi bật là đủ, không phải sửa orchestration.
+_EFFICIENCY_JUDGE = """Bạn là JUDGE NĂNG SUẤT (Efficiency).
+Mối quan tâm DUY NHẤT: đóng gói skill này tiết kiệm được bao nhiêu thao tác thủ
+công / lượt chat lặp lại? Chuỗi càng dài, càng lặp, càng nhiều bước thủ công →
+axis_score càng cao. Một-lần hoặc đã gọn rồi → điểm thấp."""
+
+_QUALITY_JUDGE = """Bạn là JUDGE CHẤT LƯỢNG (Quality).
+Mối quan tâm DUY NHẤT: user có phải liên tục sửa sai / đính chính ý định không?
+Càng nhiều correction/retry vì prompt thiếu ngữ cảnh hay Input/Output không chuẩn
+→ càng cần một skill cố định khung → axis_score càng cao. Flow trơn tru, không
+phải sửa → điểm thấp."""
+
+# Pending judges — không nằm trong JUDGES ở MVP. Bật = thêm dict tương ứng vào list.
+_COST_JUDGE = """Bạn là JUDGE CHI PHÍ (Cost).
+Mối quan tâm DUY NHẤT: pattern có nhồi file thô / dùng model đắt cho việc dễ gây
+lãng phí token không? Nếu đóng gói, có nên đẩy phần xử lý thô sang code thay vì
+LLM? Đây là vai PHẢN BIỆN — sẵn sàng cho stance="reject" nếu không đáng token."""
+
+_BUSINESS_JUDGE = """Bạn là JUDGE NGHIỆP VỤ (Business).
+Mối quan tâm DUY NHẤT: đây có phải luồng làm việc cốt lõi, lặp lại của công ty
+hay chỉ là chat tự học cá nhân? Chỉ luồng có giá trị nghiệp vụ mới đáng đóng gói."""
+
+
+JUDGE_TASK = """NHIỆM VỤ: đọc candidate + facts (đã trích) + traces, rồi phán xét
+THEO ĐÚNG TRỤC GIÁ TRỊ CỦA BẠN (bỏ qua mọi trục khác). Output STRICT JSON object:
+{
+  "stance": "approve" | "reject" | "neutral",
+  "axis_score": 1-5,      // điểm trên trục của riêng bạn
+  "argument": "..."        // 1-3 câu, bám bằng chứng cụ thể trong trace
+}
+KHÔNG kèm prose ngoài JSON."""
+
+
+JUDGES: list[dict[str, str]] = [
+    {"id": "efficiency", "label_vi": "Năng suất", "label_en": "Efficiency",
+     "persona": _EFFICIENCY_JUDGE},
+    {"id": "quality", "label_vi": "Chất lượng", "label_en": "Quality",
+     "persona": _QUALITY_JUDGE},
+]
+
+
+CONSOLIDATOR_INSTRUCTIONS = """PASS 2 · CONSOLIDATOR (chốt 1 candidate).
+
+Bạn nhận candidate, facts đã trích, và `verdicts` — phán xét của từng judge theo
+trục riêng (mỗi verdict có stance / axis_score / argument; verdict có `error` là
+judge lỗi, cứ coi như khuyết). Tổng hợp lại thành quyết nghị cuối:
+
+1. `final_score`: recurrence / cohesion / personalization (1-5) — quy các
+   axis_score + lập luận của judge về 3 trục chuẩn này.
+2. `rejected_reason`: null nếu DUYỆT; "low_score" nếu các judge đều chấm thấp /
+   không đáng đóng gói; "not_a_pattern" nếu thực ra không phải pattern thật.
+   BẠN ĐƯỢC PHÉP BÁC dù judge đồng thuận — đừng làm con dấu cao su.
+3. `consolidator_note`: 1-2 câu lý do quyết nghị, có nhắc tới điểm bất đồng (nếu có).
+
+Output STRICT JSON object đúng 3 field trên. KHÔNG kèm prose ngoài JSON."""
 
 
 def build_triage_prompt(
@@ -94,12 +157,38 @@ def build_triage_prompt(
     )
 
 
-def build_deepdive_prompt(
+def build_extract_prompt(
     candidate: dict[str, Any],
     traces: dict[str, list[dict[str, Any]]],
 ) -> str:
     payload = {"candidate": candidate, "traces": traces}
     return (
-        f"{JUDGE_SYSTEM}\n\n{DEEPDIVE_INSTRUCTIONS}\n\n"
+        f"{JUDGE_SYSTEM}\n\n{EXTRACT_INSTRUCTIONS}\n\n"
+        f"INPUT:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    )
+
+
+def build_judge_prompt(
+    judge: dict[str, str],
+    candidate: dict[str, Any],
+    facts: dict[str, Any],
+    traces: dict[str, list[dict[str, Any]]],
+) -> str:
+    payload = {"candidate": candidate, "facts": facts, "traces": traces}
+    header = f"[{judge['label_vi']} / {judge['label_en']}]"
+    return (
+        f"{header}\n{judge['persona']}\n\n{JUDGE_TASK}\n\n"
+        f"INPUT:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    )
+
+
+def build_consolidator_prompt(
+    candidate: dict[str, Any],
+    facts: dict[str, Any],
+    verdicts: list[dict[str, Any]],
+) -> str:
+    payload = {"candidate": candidate, "facts": facts, "verdicts": verdicts}
+    return (
+        f"{JUDGE_SYSTEM}\n\n{CONSOLIDATOR_INSTRUCTIONS}\n\n"
         f"INPUT:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )

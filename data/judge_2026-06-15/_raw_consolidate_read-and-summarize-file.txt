@@ -1,0 +1,9 @@
+{
+  "final_score": {
+    "recurrence": 4,
+    "cohesion": 2,
+    "personalization": 2
+  },
+  "rejected_reason": "low_score",
+  "consolidator_note": "Cả hai judge đồng thuận reject (axis 2/2): mỗi trace chỉ là một lượt 'đọc → tóm tắt' cực ngắn (1 Read, tối đa 2 bash), feedback=null, không có retry/correction nên không có process dài hay quality-pain để đóng gói. Tần suất tái diễn cao nên giữ recurrence=4, nhưng hạ cohesion xuống 2 vì 'chuỗi' thực chất chỉ là một thao tác đơn — prelim cohesion=5 bị thổi phồng; đóng gói skill gần như không tiết kiệm thao tác nào."
+}

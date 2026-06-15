@@ -25,11 +25,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _lib.aggregator import aggregate, load_sessions  # noqa: E402
 from _lib.candidate_schema import (  # noqa: E402
     apply_recurrence_guard,
+    normalize_skill_name,
     normalize_skill_type,
     split_accepted,
 )
-from _lib.claude_runner import run_claude_json  # noqa: E402
-from _lib.judge_prompts import build_deepdive_prompt, build_triage_prompt  # noqa: E402
+from _lib.claude_runner import ClaudeRunError, run_claude_json  # noqa: E402
+from _lib.debate import run_debate  # noqa: E402
+from _lib.judge_prompts import (  # noqa: E402
+    JUDGES,
+    build_consolidator_prompt,
+    build_extract_prompt,
+    build_triage_prompt,
+)
 from _lib.render_proposal import render_pattern_report  # noqa: E402
 from _lib.trace_loader import load_traces  # noqa: E402
 
@@ -62,7 +69,7 @@ def _list_installed_skills(skills_dir: Path) -> list[str]:
               help="Reject candidates whose evidence spans fewer sessions.")
 @click.option("--max-deepdive", type=int, default=5, show_default=True,
               help="Cap how many triaged candidates get a deep-dive LLM call.")
-@click.option("--timeout", type=float, default=180.0, show_default=True)
+@click.option("--timeout", type=float, default=300.0, show_default=True)
 def main(
     sessions_dir: Path,
     installed_skills_dir: Path,
@@ -95,12 +102,12 @@ def main(
         installed = _list_installed_skills(installed_skills_dir)
 
         # ── PASS 1: triage on summaries ──────────────────────────────────────
-        click.echo(f"[judge] triage: `claude -p` (timeout={timeout}s)")
+        click.echo(f"[judge] triage: `ccs one -p` (timeout={timeout}s)")
         triage_prompt = build_triage_prompt(cluster_dicts, installed)
         triage = run_claude_json(triage_prompt, timeout=timeout)
         (out_dir / "_raw_triage.txt").write_text(
             json.dumps(triage, ensure_ascii=False, indent=2), encoding="utf-8")
-        triage = [normalize_skill_type(c) for c in triage]
+        triage = [normalize_skill_name(normalize_skill_type(c)) for c in triage]
 
         # ── GUARD: code-level recurrence check ───────────────────────────────
         triage = apply_recurrence_guard(triage, min_recurrence=min_recurrence)
@@ -110,16 +117,44 @@ def main(
         )
         accepted_triage = accepted_triage[:max_deepdive]
 
-        # ── PASS 2: deep-dive over full ordered traces ───────────────────────
+        # ── PASS 2 (Cách B debate): extract → judges → consolidate ──────────
+        # Each sub-step can fail without tanking the candidate: extract/consolidator
+        # errors are recorded as fields; a failed judge is recorded as a verdict
+        # with an `error` key (see _lib/debate.py). The triage candidate always
+        # survives (it still carries trigger_intent + evidence).
         enriched: list[dict] = []
         for c in accepted_triage:
             src = c.get("evidence", {}).get("source_files", [])
             traces = load_traces(src, sessions_dir)
-            click.echo(f"[judge] deep-dive: {c['name']} ({len(traces)} traces)")
-            dd = run_claude_json(build_deepdive_prompt(c, traces), timeout=timeout)
-            (out_dir / f"_raw_deepdive_{c['name']}.txt").write_text(
-                json.dumps(dd, ensure_ascii=False, indent=2), encoding="utf-8")
-            enriched.append({**c, **dd})
+            click.echo(f"[judge] debate: {c['name']} ({len(traces)} traces, {len(JUDGES)} judges)")
+
+            # EXTRACT — neutral facts from the trace.
+            try:
+                facts = run_claude_json(build_extract_prompt(c, traces), timeout=timeout)
+                (out_dir / f"_raw_extract_{c['name']}.txt").write_text(
+                    json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")
+            except (ClaudeRunError, ValueError, json.JSONDecodeError) as e:
+                click.echo(f"[judge]   ! extract failed ({e})")
+                facts = {"extract_error": str(e)}
+
+            # DEBATE — N judges in parallel, each argues its own axis.
+            verdicts = run_debate(
+                c, facts, traces, judges=JUDGES, runner=run_claude_json, timeout=timeout
+            )
+            (out_dir / f"_raw_debate_{c['name']}.txt").write_text(
+                json.dumps(verdicts, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            # CONSOLIDATE — one verdict reconciling the judges.
+            try:
+                verdict = run_claude_json(
+                    build_consolidator_prompt(c, facts, verdicts), timeout=timeout)
+                (out_dir / f"_raw_consolidate_{c['name']}.txt").write_text(
+                    json.dumps(verdict, ensure_ascii=False, indent=2), encoding="utf-8")
+            except (ClaudeRunError, ValueError, json.JSONDecodeError) as e:
+                click.echo(f"[judge]   ! consolidator failed ({e}); keeping candidate")
+                verdict = {"consolidator_error": str(e)}
+
+            enriched.append({**c, **facts, "debate": verdicts, **verdict})
 
         accepted = [c for c in enriched if not c.get("rejected_reason")]
         accepted = sorted(

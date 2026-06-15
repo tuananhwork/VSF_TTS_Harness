@@ -6,6 +6,27 @@ from typing import Any
 
 from jinja2 import Environment
 
+from _lib.candidate_schema import slugify_skill_name
+
+
+_DESCRIPTION_MAX = 1024
+
+
+def build_skill_description(candidate: dict[str, Any]) -> str:
+    """Build a spec-valid `description` string from a candidate.
+
+    The Agent Skills spec wants a single non-empty string (<= 1024 chars) that
+    says both what the skill does and when to use it. We compose it from the
+    bilingual `trigger_intent`, leading with the English trigger (keyword-rich
+    for matching) and appending the Vietnamese one after `Dùng khi:`.
+    """
+    trigger = candidate.get("trigger_intent") or {}
+    en = (trigger.get("en") or "").strip().rstrip(".")
+    vi = (trigger.get("vi") or "").strip()
+    parts = [p for p in (en, f"Dùng khi: {vi}" if vi else "") if p]
+    desc = ". ".join(parts).strip() or candidate.get("name", "skill")
+    return desc[:_DESCRIPTION_MAX]
+
 
 _env = Environment(
     autoescape=False,
@@ -65,6 +86,15 @@ _PATTERN_REPORT_TMPL = _env.from_string("""\
 {% endif %}
 {% if c.improvement_notes %}
 - Cải tiến lần sau / Improve: {{ c.improvement_notes }}
+{% endif %}
+{% if c.debate %}
+- Debate (judge verdicts):
+{% for v in c.debate %}
+  - **{{ v.judge }}** [{{ v.stance }}{% if v.axis_score is not none %}, {{ v.axis_score }}/5{% endif %}]: {{ v.argument or v.error }}
+{% endfor %}
+{% endif %}
+{% if c.consolidator_note %}
+- Consolidator: {{ c.consolidator_note }}
 {% endif %}
 - Evidence sessions: {{ c.evidence.session_ids | join(", ") }}
 - Risk flags: {{ c.risk_flags | join(", ") if c.risk_flags else "none" }}
@@ -137,10 +167,12 @@ def render_skill_dir(
     `candidate` is one element from candidate_skills.json; `filled` is the LLM
     template-fill output (steps + 3 golden tests).
     """
-    skill_dir = output_dir / candidate["name"]
+    name = slugify_skill_name(candidate["name"])
+    skill_dir = output_dir / name
     skill_dir.mkdir(parents=True, exist_ok=True)
     ctx = {
-        "name": candidate["name"],
+        "name": name,
+        "description": build_skill_description(candidate),
         "skill_type": candidate.get("skill_type", "process_macro"),
         "trigger_vi": candidate["trigger_intent"]["vi"],
         "trigger_en": candidate["trigger_intent"]["en"],

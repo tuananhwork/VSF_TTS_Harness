@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pattern — Pipeline: Log → Skill được duyệt</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c2330;
+    --border: #2d3543;
+    --text: #e6edf3;
+    --muted: #8b95a5;
+    --scan: #58a6ff;
+    --judge: #d29922;
+    --synth: #3fb950;
+    --accept: #bc8cff;
+    --debate: #f778ba;
+    --code: #ff7b72;
+    --shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: radial-gradient(1200px 600px at 50% -10%, #16202e 0%, var(--bg) 60%);
+    color: var(--text);
+    line-height: 1.55;
+    padding: 0 0 80px;
+  }
+  header {
+    text-align: center;
+    padding: 44px 20px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 40px;
+  }
+  header h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: -.5px; }
+  header p { margin: 4px 0; color: var(--muted); font-size: 15px; }
+  .subtitle code {
+    background: var(--panel-2); padding: 2px 7px; border-radius: 5px;
+    color: var(--code); font-size: 13px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+  /* Legend */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 18px; justify-content: center;
+    margin: 0 auto 44px; font-size: 13px; color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+
+  /* Stage */
+  .stage {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 5px solid var(--accent, var(--border));
+    border-radius: 14px;
+    padding: 22px 26px;
+    box-shadow: var(--shadow);
+    position: relative;
+  }
+  .stage-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .badge {
+    width: 40px; height: 40px; min-width: 40px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 18px; color: #0d1117;
+    background: var(--accent);
+  }
+  .stage-head h2 { margin: 0; font-size: 21px; }
+  .stage-head .cmd {
+    margin-left: auto; font-size: 12px; color: var(--muted);
+    background: var(--bg); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 6px; font-family: ui-monospace, monospace;
+  }
+  .stage > p.lead { color: var(--muted); margin: 2px 0 16px; font-size: 14px; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+
+  .box-title {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); margin: 0 0 8px; font-weight: 700;
+  }
+  ul.steps { margin: 0; padding-left: 0; list-style: none; }
+  ul.steps li {
+    position: relative; padding: 6px 0 6px 26px; font-size: 14px;
+    border-bottom: 1px dashed var(--border);
+  }
+  ul.steps li:last-child { border-bottom: 0; }
+  ul.steps li::before {
+    content: counter(step); counter-increment: step;
+    position: absolute; left: 0; top: 6px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--accent); color: #0d1117;
+    font-size: 11px; font-weight: 700; text-align: center; line-height: 18px;
+  }
+  ul.steps { counter-reset: step; }
+  .tag {
+    display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px;
+    font-weight: 700; margin-left: 4px; vertical-align: middle;
+  }
+  .tag.llm { background: rgba(210,153,34,.18); color: var(--judge); border:1px solid rgba(210,153,34,.4);}
+  .tag.code { background: rgba(88,166,255,.15); color: var(--scan); border:1px solid rgba(88,166,255,.4);}
+  .tag.user { background: rgba(188,140,255,.15); color: var(--accept); border:1px solid rgba(188,140,255,.4);}
+
+  .artifact {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+  }
+  .artifact .path {
+    font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--synth);
+    display: block; margin-bottom: 8px; word-break: break-all;
+  }
+  .artifact ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+  .artifact ul li { padding: 2px 0; }
+  .artifact code { color: var(--text); font-size: 12px; }
+
+  /* Connector arrow */
+  .arrow {
+    text-align: center; color: var(--muted); padding: 10px 0; position: relative;
+  }
+  .arrow .data {
+    display: inline-block; font-size: 12px; font-family: ui-monospace, monospace;
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 5px 12px; border-radius: 20px;
+  }
+  .arrow::before, .arrow::after {
+    content: ""; position: absolute; left: 50%; width: 2px; height: 12px;
+    background: var(--border);
+  }
+  .arrow::before { top: -2px; }
+  .arrow::after { bottom: -2px; }
+  .arrow .chev { color: var(--muted); font-size: 14px; margin-left: 6px; }
+
+  /* Debate sub-pipeline */
+  .debate {
+    margin-top: 18px; background: var(--bg);
+    border: 1px dashed var(--debate); border-radius: 12px; padding: 18px;
+  }
+  .debate h3 { margin: 0 0 4px; font-size: 15px; color: var(--debate); }
+  .debate p.note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  .flow {
+    display: grid; grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: stretch; gap: 8px;
+  }
+  @media (max-width: 760px) { .flow { grid-template-columns: 1fr; } .flow .gt { display:none; } }
+  .node {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .node h4 { margin: 0 0 4px; font-size: 13.5px; }
+  .node p { margin: 0; font-size: 12px; color: var(--muted); }
+  .node.extract { border-top: 3px solid var(--scan); }
+  .node.judges  { border-top: 3px solid var(--debate); }
+  .node.consol  { border-top: 3px solid var(--judge); }
+  .gt { display: flex; align-items: center; color: var(--muted); font-size: 20px; }
+  .judge-list { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+  .judge-chip {
+    font-size: 11.5px; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 8px; display: flex; justify-content: space-between;
+  }
+  .judge-chip b { color: var(--debate); font-weight: 600; }
+  .parallel-hint { font-size: 10.5px; color: var(--debate); margin-top: 6px; text-transform: uppercase; letter-spacing:.5px;}
+
+  /* skill_type split */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+  @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+  .split .card {
+    border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+    background: var(--panel-2);
+  }
+  .split .card.macro { border-left: 3px solid var(--synth); }
+  .split .card.lesson { border-left: 3px solid var(--code); }
+  .split .card h4 { margin: 0 0 5px; font-size: 13px; }
+  .split .card p { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .split .card .k { font-family: ui-monospace, monospace; font-size: 11.5px; }
+  .macro .k { color: var(--synth); }
+  .lesson .k { color: var(--code); }
+
+  .cost-note {
+    margin-top: 14px; font-size: 12.5px; color: var(--muted);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .cost-note b { color: var(--text); }
+
+  footer { text-align: center; color: var(--muted); font-size: 12.5px; margin-top: 50px; }
+  footer code { color: var(--code); }
+  .stages { display: flex; flex-direction: column; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pattern — Pipeline xử lý</h1>
+  <p class="subtitle">Từ <b>log Claude Cowork</b> → <b>Skill cá nhân hoá được duyệt &amp; cài đặt</b></p>
+  <p>Quan sát hành vi user → phát hiện pattern lặp lại → đóng gói thành Skill draft</p>
+</header>
+
+<div class="wrap">
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--scan)"></i> Scan (code)</span>
+    <span><i class="dot" style="background:var(--judge)"></i> Judge (LLM + code)</span>
+    <span><i class="dot" style="background:var(--debate)"></i> Debate (multi-judge)</span>
+    <span><i class="dot" style="background:var(--synth)"></i> Synth (LLM)</span>
+    <span><i class="dot" style="background:var(--accept)"></i> Accept (user)</span>
+    <span><span class="tag llm">LLM</span> gọi <code>ccs one -p</code></span>
+    <span><span class="tag code">CODE</span> thuần Python</span>
+  </div>
+
+  <div class="stages">
+
+    <!-- SOURCE -->
+    <div class="arrow" style="padding-top:0">
+      <span class="data">📂 Log Claude Desktop &nbsp;<code style="color:var(--muted)">…\Claude\local-agent-mode-sessions\&lt;user&gt;\&lt;workspace&gt;\local_*\audit.jsonl</code></span>
+    </div>
+
+    <!-- STAGE 1: SCAN -->
+    <div class="stage" style="--accent:var(--scan)">
+      <div class="stage-head">
+        <div class="badge">1</div>
+        <h2>Scan <span class="tag code">CODE</span></h2>
+        <span class="cmd">uv run python scripts/scan.py</span>
+      </div>
+      <p class="lead">Trích session JSONL từ log raw của Claude Desktop cho 1 ngày. Không gọi LLM — thuần parse + heuristic.</p>
+      <div class="cols">
+        <div>
+          <p class="box-title">Các bước</p>
+          <ul class="steps">
+            <li><b>Discover</b> session theo cây <code>user/workspace/local_*</code></li>
+            <li><b>Filter theo ngày</b> (<code>TARGET_DATE</code>, mặc định hôm nay) — giữ session có cửa sổ [createdAt, lastActivityAt] chạm ngày</li>
+            <li><b>Parse <code>audit.jsonl</code></b>: dedupe theo uuid, tách turn user / assistant, gom tool_use + tool_result</li>
+            <li><b>Heuristic feedback</b>: gắn cờ <code>correction</code> / <code>confirm</code> / <code>retry</code> (retry = cùng tool+input ≤ 60s)</li>
+            <li><b>Compress runs</b>: <code>[A,A,B] → [A×2, B]</code> giữ flow gọn cho judge</li>
+            <li><b>Tổng hợp</b> tool_usage, tool_sequence, mcp_usage, token, outputs_produced</li>
+          </ul>
+        </div>
+        <div>
+          <p class="box-title">Output</p>
+          <div class="artifact">
+            <span class="path">data/sessions_&lt;date&gt;_runAt_&lt;ts&gt;/</span>
+            <ul>
+              <li><code>&lt;process&gt;__&lt;id&gt;.jsonl</code> — 1 file/session: dòng <code>session_summary</code> + nhiều <code>turn</code> + <code>rate_limit</code></li>
+              <li><code>_index.json</code> — scanned / matched + danh sách session</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><span class="data">N session JSONL (summary + turns)</span><span class="chev">▼</span></div>
+
+    <!-- STAGE 2: JUDGE -->
+    <div class="stage" style="--accent:var(--judge)">
+      <div class="stage-head">
+        <div class="badge">2</div>
+        <h2>Judge <span class="tag code">CODE</span> <span class="tag llm">LLM</span></h2>
+        <span class="cmd">uv run python scripts/judge.py --sessions-dir …</span>
+      </div>
+      <p class="lead">Triage → recurrence guard → debate đa-judge → candidate skills. Đây là não của pipeline.</p>
+
+      <div class="cols">
+        <div>
+          <p class="box-title">Tiền xử lý</p>
+          <ul class="steps">
+            <li><b>load_sessions</b> + <b>aggregate</b> → gom thô thành "group" theo tool usage <span class="tag code">CODE</span></li>
+          </ul>
+          <p class="box-title" style="margin-top:14px">Pass 1 — Triage <span class="tag llm">LLM</span></p>
+          <ul class="steps">
+            <li>Chạy trên <b>summary</b> + <code>tool_sequence</code> + <code>intent_seeds</code></li>
+            <li>Gom task lặp lại xuyên session, đặt <code>name</code> (kebab-case)</li>
+            <li>Gắn <code>skill_type</code>, <code>trigger_intent</code> (vi/en), <code>evidence</code>, <code>prelim_score</code></li>
+          </ul>
+          <p class="box-title" style="margin-top:14px">Guard — Recurrence <span class="tag code">CODE</span></p>
+          <ul class="steps">
+            <li>Loại candidate có &lt; <code>--min-recurrence</code> session</li>
+            <li>Cap số candidate deep-dive bằng <code>--max-deepdive</code></li>
+          </ul>
+        </div>
+        <div>
+          <p class="box-title">Output</p>
+          <div class="artifact">
+            <span class="path">data/judge_&lt;date&gt;/</span>
+            <ul>
+              <li><code>cluster_summary.json</code> — các group tool-usage</li>
+              <li><code>candidate_skills.json</code> — candidate (accepted + rejected)</li>
+              <li><code>pattern_report.md</code> — báo cáo người đọc</li>
+              <li><code>_raw_triage / _raw_extract_* / _raw_debate_* / _raw_consolidate_*</code> — debug từng bước</li>
+            </ul>
+          </div>
+          <div class="split">
+            <div class="card macro">
+              <h4>🧩 process_macro</h4>
+              <p>Flow tốt, lặp lại → đóng gói để <span class="k">gọi lại nhanh</span>.</p>
+            </div>
+            <div class="card lesson">
+              <h4>🩹 improvement_lesson</h4>
+              <p>Session lắm retry/correction → bài học <span class="k">"lần sau làm X trước"</span>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pass 2 debate sub-pipeline -->
+      <div class="debate">
+        <h3>Pass 2 — Debate (Cách B) · mỗi candidate chạy trên FULL TRACE</h3>
+        <p class="note">Mỗi sub-step lỗi không làm hỏng candidate — lỗi được ghi thành field để consolidator vẫn thấy lỗ hổng.</p>
+        <div class="flow">
+          <div class="node extract">
+            <h4>① Extract <span class="tag llm">LLM</span></h4>
+            <p>Trung lập, không chấm điểm. Trích <code>action_template</code> (flow có thứ tự), <code>good_points</code>, <code>weak_points</code>, <code>improvement_notes</code>, <code>golden_tests</code>, <code>risk_flags</code>.</p>
+          </div>
+          <div class="gt">→</div>
+          <div class="node judges">
+            <h4>② Debate <span class="tag llm">LLM</span></h4>
+            <p>N judge, mỗi judge chấm 1 trục giá trị, trả <code>{stance, axis_score, argument}</code>.</p>
+            <div class="judge-list">
+              <div class="judge-chip"><span>⚡ Năng suất</span><b>Efficiency</b></div>
+              <div class="judge-chip"><span>✅ Chất lượng</span><b>Quality</b></div>
+            </div>
+            <div class="parallel-hint">▤▤ chạy song song (thread pool)</div>
+          </div>
+          <div class="gt">→</div>
+          <div class="node consol">
+            <h4>③ Consolidate <span class="tag llm">LLM</span></h4>
+            <p>Tổng hợp verdict → <code>final_score</code> + <code>rejected_reason</code> + <code>consolidator_note</code>. Được phép bác dù judge đồng thuận.</p>
+          </div>
+        </div>
+        <div class="cost-note">
+          💰 Chi phí mỗi candidate: <b>1 (extract) + N (judges) + 1 (consolidate)</b> lời gọi <code>ccs one -p</code> — số candidate đã bị cap bởi <code>--max-deepdive</code>.
+          <br>Sau debate: sort theo tổng <code>final_score</code> → giữ <code>--top-candidates</code>.
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><span class="data">candidate_skills.json (accepted, có flow + tests + score)</span><span class="chev">▼</span></div>
+
+    <!-- STAGE 3: SYNTH -->
+    <div class="stage" style="--accent:var(--synth)">
+      <div class="stage-head">
+        <div class="badge">3</div>
+        <h2>Synth <span class="tag llm">LLM</span></h2>
+        <span class="cmd">uv run python scripts/synth.py --candidates … --top 3</span>
+      </div>
+      <p class="lead">Sinh skill draft + proposal cho top-N candidate được duyệt. Hai đường: A (skill-creator) → fallback B (template).</p>
+      <div class="cols">
+        <div>
+          <p class="box-title">Mỗi candidate</p>
+          <ul class="steps">
+            <li><b>Path A</b> — <code>ccs one -p</code> dùng skill <code>skill-creator</code> ghi <code>SKILL.md</code> đúng spec Agent Skills (name + description + metadata)</li>
+            <li><b>Kiểm tra</b>: nếu có <code>SKILL.md</code> → <code>synth_path = "A"</code></li>
+            <li><b>Path B (fallback)</b> — nếu A timeout/không ra file: <code>ccs one -p</code> nhỏ điền Jinja template (steps + 3 golden tests)</li>
+            <li>process_macro → tài liệu hoá flow 1→2→3→4; improvement_lesson → xoáy vào weak_points + improvement_notes</li>
+            <li>risk_flags <code>write_action/deletes_files</code> → buộc chèn bước confirm trước side-effect</li>
+          </ul>
+        </div>
+        <div>
+          <p class="box-title">Output</p>
+          <div class="artifact">
+            <span class="path">data/skills_&lt;date&gt;_proposal/</span>
+            <ul>
+              <li><code>&lt;skill-name&gt;/SKILL.md</code> (+ <code>golden_tests.md</code>, <code>scripts/</code> nếu cần)</li>
+              <li><code>PROPOSAL.md</code> — bản tóm tắt để người duyệt đọc</li>
+              <li><code>accept.py</code> — installer tự chứa, đã bake tên skill</li>
+              <li><code>_proposal_meta.json</code> — meta + synth_path từng skill</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><span class="data">Skill drafts + PROPOSAL.md + accept.py</span><span class="chev">▼</span></div>
+
+    <!-- STAGE 4: ACCEPT -->
+    <div class="stage" style="--accent:var(--accept)">
+      <div class="stage-head">
+        <div class="badge">4</div>
+        <h2>Accept <span class="tag user">USER</span></h2>
+        <span class="cmd">python data/skills_&lt;date&gt;_proposal/accept.py</span>
+      </div>
+      <p class="lead">Người dùng đọc PROPOSAL, chọn skill muốn giữ, cài vào kho skill cá nhân. Bước duyệt là của con người — không tự động.</p>
+      <div class="cols">
+        <div>
+          <p class="box-title">Các bước</p>
+          <ul class="steps">
+            <li>Đọc <code>PROPOSAL.md</code>, xem từng skill draft</li>
+            <li>Chạy <code>accept.py</code> — interactive (chọn số) hoặc <code>accept.py 1 3</code> non-interactive</li>
+            <li><b>copytree</b> <code>&lt;skill-name&gt;/</code> → <code>~/.claude/skills/&lt;skill-name&gt;/</code> (bỏ qua nếu đã tồn tại)</li>
+          </ul>
+        </div>
+        <div>
+          <p class="box-title">Kết quả</p>
+          <div class="artifact">
+            <span class="path">~/.claude/skills/&lt;skill-name&gt;/</span>
+            <ul>
+              <li>✅ Skill được cài → <b>active ở session Claude kế tiếp</b></li>
+              <li>Vòng lặp khép kín: hành vi của bạn → skill phục vụ lại chính bạn</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow" style="padding-bottom:0">
+      <span class="data" style="border-color:var(--accept); color:var(--accept)">🎯 Skill cá nhân hoá, sẵn sàng dùng lại</span>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Pattern — Behavior → Skill harness cho Claude Cowork (MVP) · 4 bước: <b style="color:var(--scan)">Scan</b> → <b style="color:var(--judge)">Judge</b> → <b style="color:var(--synth)">Synth</b> → <b style="color:var(--accept)">Accept</b></p>
+    <p>Chi tiết: <code>README.md</code> · <code>docs/products/agent-debate.md</code> · <code>docs/superpowers/specs/2026-06-13-pattern-end-to-end-design.md</code></p>
+  </footer>
+
+</div>
+</body>
+</html>

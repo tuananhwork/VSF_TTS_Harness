@@ -63,7 +63,7 @@ def main() -> None:
     _run(
         sys.executable, "scripts/synth.py",
         "--candidates", str(judge_dir / "candidate_skills.json"),
-        "--top", "3", "--timeout", "120",
+        "--top", "3", "--timeout", "300",
     )
     proposal_dir = _latest("skills_*_proposal")
     print(f"[e2e] proposal: {proposal_dir}")

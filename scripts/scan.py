@@ -22,6 +22,8 @@ SOURCE_LOG_ROOT = Path(
     r"\LocalCache\Roaming\Claude\local-agent-mode-sessions"
 )
 
+# SOURCE_LOG_ROOT = Path(r"C:\User\chuba")
+
 # YYYY-MM-DD. Leave None to use today's date.
 # A session is included if its [createdAt, lastActivityAt] window touches this date.
 TARGET_DATE: str | None = None

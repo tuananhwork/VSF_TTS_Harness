@@ -5,9 +5,9 @@ Usage:
         [--top 3] [--timeout 120]
 
 For each top-N accepted candidate:
-- Path A: ask `claude -p` to use the skill-creator skill, output to a per-skill
+- Path A: ask `ccs one -p` to use the skill-creator skill, output to a per-skill
   folder. If SKILL.md exists after the call, mark synth_path = "A".
-- Path B: if A fails (timeout or no file), fall back to a smaller `claude -p`
+- Path B: if A fails (timeout or no file), fall back to a smaller `ccs one -p`
   call that fills the Jinja templates with steps + 3 golden tests.
 
 Writes PROPOSAL.md + accept.py under data/skills_<date>_proposal/.
@@ -30,7 +30,8 @@ from _lib.claude_runner import (  # noqa: E402
     run_claude,
     run_claude_json,
 )
-from _lib.render_proposal import render_skill_dir  # noqa: E402
+from _lib.candidate_schema import slugify_skill_name  # noqa: E402
+from _lib.render_proposal import build_skill_description, render_skill_dir  # noqa: E402
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -40,9 +41,12 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 
 def _path_a_prompt(candidate: dict, skill_dir: Path) -> str:
     skill_type = candidate.get("skill_type", "process_macro")
+    name = skill_dir.name
+    description = build_skill_description(candidate)
     return f"""Use the skill-creator skill. Create a new skill with these inputs.
 
-NAME: {candidate['name']}
+NAME: {name}
+DESCRIPTION: {description}
 SKILL_TYPE: {skill_type}
 TRIGGER (VI): {candidate['trigger_intent']['vi']}
 TRIGGER (EN): {candidate['trigger_intent']['en']}
@@ -57,7 +61,16 @@ RISK_FLAGS: {", ".join(candidate.get('risk_flags', []))}
 OUTPUT FOLDER (absolute): {skill_dir}
 
 Requirements:
-- Write SKILL.md with frontmatter (name, description bilingual VI/EN, skill_type).
+- Write SKILL.md whose YAML frontmatter conforms to the Agent Skills spec
+  (https://agentskills.io/specification). The frontmatter MUST have exactly two
+  required keys at the top level — `name` and `description` — plus an optional
+  `metadata:` block. Do NOT put any other keys at the top level.
+  - `name`: use exactly `{name}` (it already matches this output folder; lowercase
+    letters/digits/hyphens only, no underscores).
+  - `description`: a single string (<= 1024 chars) stating what the skill does and
+    when to use it. Use this value verbatim: {description}
+  - Put `skill_type`, `behavior_class`, and `risk_flags` under `metadata:` as
+    string values — never as top-level frontmatter keys.
 - If SKILL_TYPE is process_macro: document the ordered flow (step 1→2→3→4) from
   ACTION_TEMPLATE_JSON so the user can re-run it quickly.
 - If SKILL_TYPE is improvement_lesson: centre the skill on WEAK_POINTS +
@@ -160,7 +173,7 @@ if __name__ == "__main__":
 
 def _synthesize_one(candidate: dict, out_dir: Path, timeout: float) -> str:
     """Returns synth_path: 'A' or 'B'."""
-    skill_dir = out_dir / candidate["name"]
+    skill_dir = out_dir / slugify_skill_name(candidate["name"])
     skill_dir.mkdir(parents=True, exist_ok=True)
     today = _date.today().isoformat()
 
@@ -200,6 +213,8 @@ def main(candidates_path: Path, top: int, timeout: float) -> None:
 
     results: list[dict] = []
     for c in top_n:
+        # Canonicalize the name once so the folder, accept.py, and PROPOSAL all agree.
+        c = {**c, "name": slugify_skill_name(c["name"])}
         click.echo(f"[synth] -> {c['name']}")
         synth_path = _synthesize_one(c, out_dir, timeout)
         results.append({**c, "synth_path": synth_path})

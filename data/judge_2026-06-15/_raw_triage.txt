@@ -1,0 +1,110 @@
+[
+  {
+    "name": "write-short-prd",
+    "skill_type": "process_macro",
+    "behavior_class": "process",
+    "trigger_intent": {
+      "vi": "Khi user yêu cầu viết PRD ngắn gọn cho một feature/ý tưởng/bài toán (hỏi làm rõ scope rồi xuất file PRD).",
+      "en": "When the user asks for a short PRD for a feature/idea/problem (clarify scope, then produce the PRD file)."
+    },
+    "evidence": {
+      "session_ids": [
+        "local_69da99fc-6485-427f-ac53-76afd677467c",
+        "local_58a12280-1630-4541-a772-71b2f05f241c",
+        "local_1ad3485a-e559-49cb-ba67-90c5f9b5882b",
+        "local_2fc0fafb-26a4-4eb9-83e6-d201ce23199e"
+      ],
+      "source_files": [
+        "blissful-peaceful-feynman__69da99fc-648.jsonl",
+        "funny-beautiful-hypatia__58a12280-163.jsonl",
+        "jolly-serene-hopper__1ad3485a-e55.jsonl",
+        "vigilant-awesome-hopper__2fc0fafb-26a.jsonl"
+      ]
+    },
+    "prelim_score": {
+      "recurrence": 5,
+      "cohesion": 4,
+      "personalization": 5
+    },
+    "rejected_reason": null
+  },
+  {
+    "name": "test-and-report-ci-to-teams",
+    "skill_type": "process_macro",
+    "behavior_class": "process",
+    "trigger_intent": {
+      "vi": "Khi user muốn kiểm tra/chạy test một dự án rồi báo cáo trạng thái CI vào app Teams (tài khoản cá nhân) qua thao tác desktop.",
+      "en": "When the user wants to check/run a project's tests and report CI status into the Teams app (personal account) via desktop control."
+    },
+    "evidence": {
+      "session_ids": [
+        "local_9590c9ea-0194-4cba-83e3-b4cfe158b151",
+        "local_c740302f-169d-480f-9db6-db907ab210c0",
+        "local_902a32c7-7c3a-4c11-8b55-cbaf104b102d"
+      ],
+      "source_files": [
+        "adoring-loving-dirac__9590c9ea-019.jsonl",
+        "ecstatic-elegant-ramanujan__c740302f-169.jsonl",
+        "busy-hopeful-knuth__902a32c7-7c3.jsonl"
+      ]
+    },
+    "prelim_score": {
+      "recurrence": 4,
+      "cohesion": 4,
+      "personalization": 5
+    },
+    "rejected_reason": null
+  },
+  {
+    "name": "attach-to-running-desktop-app",
+    "skill_type": "improvement_lesson",
+    "behavior_class": "inefficient",
+    "trigger_intent": {
+      "vi": "Khi cần thao tác trên một app desktop (Teams) để báo cáo: dùng cửa sổ app đang mở sẵn trên máy, KHÔNG khởi chạy lại từ terminal — bài học từ việc user phải sửa lại nhiều lần.",
+      "en": "When operating a desktop app (Teams) to report: attach to the already-open window, do NOT relaunch from terminal — lesson from repeated user corrections."
+    },
+    "evidence": {
+      "session_ids": [
+        "local_902a32c7-7c3a-4c11-8b55-cbaf104b102d",
+        "local_c740302f-169d-480f-9db6-db907ab210c0"
+      ],
+      "source_files": [
+        "busy-hopeful-knuth__902a32c7-7c3.jsonl",
+        "ecstatic-elegant-ramanujan__c740302f-169.jsonl"
+      ]
+    },
+    "prelim_score": {
+      "recurrence": 3,
+      "cohesion": 3,
+      "personalization": 4
+    },
+    "rejected_reason": null
+  },
+  {
+    "name": "read-and-summarize-file",
+    "skill_type": "process_macro",
+    "behavior_class": "process",
+    "trigger_intent": {
+      "vi": "Khi user đưa một file và yêu cầu đọc rồi tóm tắt nội dung.",
+      "en": "When the user provides a file and asks to read and summarize its contents."
+    },
+    "evidence": {
+      "session_ids": [
+        "local_58b54691-8031-4ab7-8b0d-2f129b8d0537",
+        "local_c1d3ab46-dd15-47b5-9232-dc4cea1d470a",
+        "local_635cfe95-e948-4c6a-a9aa-4e69405d10ac"
+      ],
+      "source_files": [
+        "charming-awesome-maxwell__58b54691-803.jsonl",
+        "gracious-dazzling-hopper__c1d3ab46-dd1.jsonl",
+        "gracious-keen-cori__635cfe95-e94.jsonl"
+      ]
+    },
+    "prelim_score": {
+      "recurrence": 4,
+      "cohesion": 5,
+      "personalization": 2
+    },
+    "rejected_reason": null
+  }
+]

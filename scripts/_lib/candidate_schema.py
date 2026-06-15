@@ -11,7 +11,34 @@ Pure Python. No LLM. Functions do not mutate their inputs.
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+
+_NAME_INVALID = re.compile(r"[^a-z0-9-]+")
+
+
+def slugify_skill_name(raw: str, *, max_len: int = 64) -> str:
+    """Coerce a raw candidate name into a spec-valid Agent Skills `name`.
+
+    The Agent Skills spec (https://agentskills.io/specification) requires the
+    `name` to be lowercase `a-z`/`0-9`/`-` only, with no leading, trailing, or
+    consecutive hyphens, at most 64 chars, and matching the skill folder name.
+    The judge LLM emits snake_case, so this is the single place we normalize.
+    Idempotent: slugifying an already-valid name returns it unchanged.
+    """
+    s = (raw or "").strip().lower().replace("_", "-").replace(" ", "-")
+    s = _NAME_INVALID.sub("-", s)
+    s = re.sub(r"-{2,}", "-", s).strip("-")
+    s = s[:max_len].rstrip("-")
+    return s or "unnamed-skill"
+
+
+def normalize_skill_name(candidate: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of `candidate` with a spec-valid `name`. Does not mutate."""
+    c = dict(candidate)
+    c["name"] = slugify_skill_name(c.get("name", ""))
+    return c
 
 
 def apply_recurrence_guard(

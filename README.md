@@ -6,7 +6,11 @@ Spec: `docs/superpowers/specs/2026-06-13-pattern-end-to-end-design.md`.
 ## Yêu cầu
 
 - Python 3.12+, `uv`
-- Claude Code CLI có sẵn trên `PATH` (`claude` binary)
+- `ccs` (Claude Code Switch) có sẵn trên `PATH` — LLM call đi qua `ccs one -p`
+  (profile `one`). `ccs` tự delegate tới `claude` nên Claude Code CLI cũng phải
+  cài sẵn trên `PATH`. `claude_runner.py` tự inject `CCS_CLAUDE_PATH` (lấy từ
+  `shutil.which("claude")`) vào subprocess ccs, nên không cần set tay — kể cả
+  trên Windows nơi ccs mặc định dò claude bằng `command -v` (lỗi trên cmd.exe).
 - Đã có session log Claude Cowork trên máy
 
 ## Cài đặt
@@ -26,7 +30,7 @@ uv run python scripts/scan.py
 Mặc định scan ngày hôm nay; xem `TARGET_DATE` trong `scripts/scan.py` để đổi.
 Output: `data/sessions_<date>_runAt_<runTs>/`.
 
-### 2) Judge — 2-pass LLM-as-judge → candidate skills
+### 2) Judge — triage → multi-judge debate → candidate skills
 
 ```bash
 uv run python scripts/judge.py \
@@ -34,14 +38,25 @@ uv run python scripts/judge.py \
     --top-candidates 5 --min-recurrence 2 --max-deepdive 5
 ```
 
-Hai lượt LLM:
-- **Triage** (trên summary + `tool_sequence` + `intent_seeds`): gom task lặp lại,
-  gắn `skill_type` (`process_macro` | `improvement_lesson`).
+Hai lượt:
+- **Triage** (LLM, trên summary + `tool_sequence` + `intent_seeds`): gom task lặp
+  lại, gắn `skill_type` (`process_macro` | `improvement_lesson`).
 - **Recurrence guard** (code): loại candidate có < `min-recurrence` session.
-- **Deep-dive** (trên full trace của từng candidate): trích flow **có thứ tự**,
-  điểm tốt / chưa tốt / cải tiến.
+- **Pass 2 — debate** (Cách B, trên full trace của từng candidate, xem
+  `docs/products/agent-debate.md`), gồm 3 bước:
+  - **Extract** (LLM trung lập): trích flow **có thứ tự** + điểm tốt / chưa tốt /
+    cải tiến / golden tests — không chấm điểm, không quyết định.
+  - **Debate** (N judge chạy **song song**, mỗi judge chấm 1 trục giá trị): MVP có
+    Năng suất + Chất lượng; mỗi judge trả `{stance, axis_score, argument}`. Một judge
+    lỗi không làm hỏng candidate (ghi `error`).
+  - **Consolidate** (LLM): tổng hợp các verdict → `final_score` + `rejected_reason`
+    + `consolidator_note`; được phép bác dù judge đồng thuận.
 
-Output: `data/judge_<date>/{cluster_summary.json, pattern_report.md, candidate_skills.json}`.
+Chi phí mỗi candidate: `1 (extract) + N (judges) + 1 (consolidate)` call; số candidate
+đã bị cap bởi `--max-deepdive`.
+
+Output: `data/judge_<date>/{cluster_summary.json, pattern_report.md, candidate_skills.json}`
+(kèm `_raw_extract_*`, `_raw_debate_*`, `_raw_consolidate_*` để debug).
 
 Hai loại skill sinh ra:
 - **process_macro**: đóng gói flow tốt hay lặp lại để gọi lại nhanh.
