@@ -69,3 +69,47 @@ def load_sessions(sessions_dir: Path) -> list[Session]:
             source_file=jsonl_path.name,
         ))
     return sessions
+
+
+def _top_n_tools(session: Session, n: int) -> frozenset[str]:
+    sorted_tools = sorted(
+        session.tool_usage.items(), key=lambda kv: (-kv[1], kv[0])
+    )
+    return frozenset(name for name, _ in sorted_tools[:n])
+
+
+def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
+    if not a and not b:
+        return 1.0
+    union = a | b
+    if not union:
+        return 0.0
+    return len(a & b) / len(union)
+
+
+def cluster_by_tool_ngram(
+    sessions: Iterable[Session],
+    *,
+    top_n: int = 3,
+    jaccard_threshold: float = 0.6,
+) -> list[list[Session]]:
+    """Greedy single-pass clustering by overlap of each session's top-N tools.
+
+    Each session is added to the first existing cluster whose representative
+    set has Jaccard >= threshold; otherwise it starts a new cluster.
+    """
+    clusters: list[list[Session]] = []
+    cluster_keys: list[frozenset[str]] = []
+    for session in sessions:
+        key = _top_n_tools(session, top_n)
+        placed = False
+        for idx, repr_key in enumerate(cluster_keys):
+            if _jaccard(key, repr_key) >= jaccard_threshold:
+                clusters[idx].append(session)
+                cluster_keys[idx] = repr_key | key  # union as representative
+                placed = True
+                break
+        if not placed:
+            clusters.append([session])
+            cluster_keys.append(key)
+    return clusters
