@@ -88,3 +88,54 @@ def render_pattern_report(
         accepted=accepted,
         rejected=rejected,
     )
+
+
+from pathlib import Path
+
+from jinja2 import FileSystemLoader
+
+
+_TEMPLATES_DIR = Path(__file__).parent / "synth_templates"
+_file_env = Environment(
+    loader=FileSystemLoader(str(_TEMPLATES_DIR)),
+    autoescape=False,
+    trim_blocks=True,
+    lstrip_blocks=True,
+    keep_trailing_newline=True,
+)
+
+
+def render_skill_dir(
+    *,
+    candidate: dict[str, Any],
+    filled: dict[str, Any],
+    output_dir: Path,
+    generated_on: str,
+) -> Path:
+    """Render Path B fallback skill folder: SKILL.md + golden_tests.md.
+
+    `candidate` is one element from candidate_skills.json; `filled` is the LLM
+    template-fill output (steps + 3 golden tests).
+    """
+    skill_dir = output_dir / candidate["name"]
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    ctx = {
+        "name": candidate["name"],
+        "trigger_vi": candidate["trigger_intent"]["vi"],
+        "trigger_en": candidate["trigger_intent"]["en"],
+        "behavior_class": candidate.get("behavior_class", "process"),
+        "risk_flags": candidate.get("risk_flags") or [],
+        "evidence_session_ids": candidate.get("evidence", {}).get("session_ids", []),
+        "generated_on": generated_on,
+        "steps_markdown": filled["steps_markdown"],
+        "golden_test_1": filled["golden_test_1"],
+        "golden_test_2": filled["golden_test_2"],
+        "golden_test_3": filled["golden_test_3"],
+    }
+    (skill_dir / "SKILL.md").write_text(
+        _file_env.get_template("SKILL.md.j2").render(**ctx), encoding="utf-8"
+    )
+    (skill_dir / "golden_tests.md").write_text(
+        _file_env.get_template("golden_tests.md.j2").render(**ctx), encoding="utf-8"
+    )
+    return skill_dir

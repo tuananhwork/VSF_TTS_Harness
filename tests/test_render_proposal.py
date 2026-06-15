@@ -48,3 +48,34 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
     # Rejected candidates should not appear in the "Top candidates" section,
     # but accepted candidates should.
     assert "## Top candidates" in md or "## Candidates" in md
+
+
+from pathlib import Path
+
+from _lib.render_proposal import render_skill_dir
+
+
+def test_render_skill_dir_writes_skill_and_golden_tests(tmp_path: Path) -> None:
+    candidate = {
+        "name": "summarize_pdf",
+        "trigger_intent": {"vi": "khi cần tóm tắt PDF", "en": "when summarizing PDF"},
+        "behavior_class": "process",
+        "risk_flags": [],
+        "evidence": {"session_ids": ["s1", "s2"]},
+    }
+    filled = {
+        "steps_markdown": "1. read file\n2. summarize\n3. return summary",
+        "golden_test_1": {"query": "Q1", "expected": "E1"},
+        "golden_test_2": {"query": "Q2", "expected": "E2"},
+        "golden_test_3": {"query": "Q3", "expected": "E3"},
+    }
+    out = render_skill_dir(
+        candidate=candidate, filled=filled,
+        output_dir=tmp_path, generated_on="2026-06-13",
+    )
+    skill_md = (out / "SKILL.md").read_text(encoding="utf-8")
+    golden = (out / "golden_tests.md").read_text(encoding="utf-8")
+    assert "summarize_pdf" in skill_md
+    assert "khi cần tóm tắt PDF" in skill_md
+    assert "1. read file" in skill_md
+    assert "Q1" in golden and "E2" in golden
