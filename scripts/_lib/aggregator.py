@@ -113,3 +113,53 @@ def cluster_by_tool_ngram(
             clusters.append([session])
             cluster_keys.append(key)
     return clusters
+
+
+import re
+import unicodedata
+
+
+_PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
+
+
+def _normalize_title(title: str | None) -> frozenset[str]:
+    if not title:
+        return frozenset()
+    folded = unicodedata.normalize("NFC", title).lower()
+    stripped = _PUNCT_RE.sub(" ", folded)
+    tokens = [t for t in stripped.split() if len(t) >= 2]
+    return frozenset(tokens)
+
+
+def subcluster_by_title(
+    sessions: Iterable[Session],
+    *,
+    jaccard_threshold: float = 0.5,
+) -> list[list[Session]]:
+    """Sub-cluster by title token Jaccard. Sessions with missing/empty titles
+    are never grouped together (defensive: avoid false positives)."""
+    groups: list[list[Session]] = []
+    keys: list[frozenset[str]] = []
+    for session in sessions:
+        key = _normalize_title(session.title)
+        if not key:
+            groups.append([session])
+            keys.append(key)
+            continue
+        placed = False
+        for idx, repr_key in enumerate(keys):
+            if repr_key and _jaccard(key, repr_key) >= jaccard_threshold:
+                groups[idx].append(session)
+                keys[idx] = repr_key | key
+                placed = True
+                break
+        if not placed:
+            groups.append([session])
+            keys.append(key)
+    return groups
+
+
+def filter_by_size(
+    clusters: Iterable[list[Session]], *, min_size: int
+) -> list[list[Session]]:
+    return [c for c in clusters if len(c) >= min_size]
