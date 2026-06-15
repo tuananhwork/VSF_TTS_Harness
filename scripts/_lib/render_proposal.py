@@ -32,6 +32,8 @@ _PATTERN_REPORT_TMPL = _env.from_string("""\
 ### Cluster {{ loop.index }} ({{ cl.behavior_class_hint }})
 - recurrence: {{ cl.recurrence }}, retry_rate: {{ cl.retry_rate }}, correction_rate: {{ cl.correction_rate }}
 - representative tools: `{{ cl.representative_tools | join(", ") }}`
+- tool_sequence: {% for seq in cl.tool_sequence_per_session %}`{{ seq | join(" → ") }}`{% if not loop.last %} | {% endif %}{% endfor %}
+
 - titles: {{ cl.titles | join(" | ") }}
 - sessions: {{ cl.process_names | join(", ") }}
 
@@ -41,14 +43,29 @@ _PATTERN_REPORT_TMPL = _env.from_string("""\
 
 {% if accepted %}
 {% for c in accepted %}
-### {{ loop.index }}. `{{ c.name }}` — {{ c.behavior_class }}
+### {{ loop.index }}. `{{ c.name }}` — {{ c.skill_type }} ({{ c.behavior_class }})
 - Trigger (VI): {{ c.trigger_intent.vi }}
 - Trigger (EN): {{ c.trigger_intent.en }}
-- Score: recurrence={{ c.score.recurrence }}, cohesion={{ c.score.cohesion }}, personalization={{ c.score.personalization }} (total {{ c.score.recurrence + c.score.cohesion + c.score.personalization }})
-- Action template:
+- Score total: {{ c._score_total }}
+- Flow (action template):
 {% for step in c.action_template %}
-  - `{{ step.tool }}` ← {{ step.input_shape }}
+  {{ step.step }}. `{{ step.tool }}` ← {{ step.input_shape }}
 {% endfor %}
+{% if c.good_points %}
+- Điểm tốt / Good:
+{% for g in c.good_points %}
+  - {{ g }}
+{% endfor %}
+{% endif %}
+{% if c.weak_points %}
+- Điểm chưa tốt / Weak:
+{% for w in c.weak_points %}
+  - {{ w }}
+{% endfor %}
+{% endif %}
+{% if c.improvement_notes %}
+- Cải tiến lần sau / Improve: {{ c.improvement_notes }}
+{% endif %}
 - Evidence sessions: {{ c.evidence.session_ids | join(", ") }}
 - Risk flags: {{ c.risk_flags | join(", ") if c.risk_flags else "none" }}
 
@@ -79,6 +96,9 @@ def render_pattern_report(
 ) -> str:
     accepted = [c for c in candidates if not c.get("rejected_reason")]
     rejected = [c for c in candidates if c.get("rejected_reason")]
+    for c in accepted:
+        score = c.get("final_score") or c.get("prelim_score") or c.get("score") or {}
+        c["_score_total"] = sum(score.values())
     return _PATTERN_REPORT_TMPL.render(
         date=date,
         date_range=date_range,

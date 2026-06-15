@@ -25,11 +25,15 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
     candidates = [
         {
             "name": "summarize_pdf",
+            "skill_type": "improvement_lesson",
             "trigger_intent": {"vi": "Khi user muốn tóm tắt PDF", "en": "When user wants to summarize PDF"},
-            "action_template": [{"tool": "scan", "input_shape": "path"}],
+            "action_template": [{"step": 1, "tool": "scan", "input_shape": "path"}],
             "evidence": {"session_ids": ["s1", "s2"], "process_names": ["proc-a"]},
-            "score": {"recurrence": 4, "cohesion": 4, "personalization": 3},
-            "behavior_class": "process",
+            "final_score": {"recurrence": 4, "cohesion": 4, "personalization": 3},
+            "behavior_class": "inefficient",
+            "good_points": ["đọc file trước khi tóm tắt"],
+            "weak_points": ["phải làm lại 3 lần vì thiếu ngữ cảnh"],
+            "improvement_notes": "lần sau hỏi rõ độ dài mong muốn trước",
             "risk_flags": [],
             "rejected_reason": None,
         }
@@ -42,11 +46,12 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
         candidates=candidates,
     )
     assert "summarize_pdf" in md
-    assert "process" in md
+    assert "improvement_lesson" in md
     assert "Khi user muốn tóm tắt PDF" in md
     assert "2026-06-13" in md
-    # Rejected candidates should not appear in the "Top candidates" section,
-    # but accepted candidates should.
+    # V2 good/weak/improvement surfaced for learning.
+    assert "phải làm lại 3 lần vì thiếu ngữ cảnh" in md
+    assert "lần sau hỏi rõ độ dài mong muốn trước" in md
     assert "## Top candidates" in md or "## Candidates" in md
 
 
