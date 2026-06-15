@@ -14,14 +14,23 @@ from _lib.aggregator import (
 
 
 def _mk_session(
-    sid: str, tools: dict[str, int], title: str = "x", intent_seed: str | None = None
+    sid: str, tools: dict[str, int], title: str = "x", intent_seed: str | None = None,
+    tool_sequence: list[str] | None = None,
 ) -> Session:
     return Session(
         session_id=sid, process_name=sid, title=title, intent_seed=intent_seed,
         total_actions=sum(tools.values()), total_user_turns=0,
         total_input_tokens=0, total_output_tokens=0, duration_seconds=0.0,
         tool_usage=tools, retry_count=0, correction_count=0,
+        tool_sequence=tool_sequence or [],
     )
+
+
+def test_to_dict_includes_tool_sequence_per_session() -> None:
+    a = _mk_session("a", {"Read": 1, "Edit": 2}, tool_sequence=["Read", "Edit×2"])
+    cluster = aggregate([a])[0]
+    d = cluster.to_dict()
+    assert d["tool_sequence_per_session"] == [["Read", "Edit×2"]]
 
 
 def test_load_sessions_reads_all_fixture_files(sessions_dir: Path) -> None:

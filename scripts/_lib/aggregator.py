@@ -32,6 +32,7 @@ class Session:
     tool_usage: dict[str, int]
     retry_count: int
     correction_count: int
+    tool_sequence: list[str] = field(default_factory=list)
     source_file: str = ""
 
 
@@ -69,6 +70,7 @@ def load_sessions(sessions_dir: Path) -> list[Session]:
             tool_usage=dict(rec.get("tool_usage") or {}),
             retry_count=int(rec.get("retry_count") or 0),
             correction_count=int(rec.get("correction_count") or 0),
+            tool_sequence=list(rec.get("tool_sequence") or []),
             source_file=jsonl_path.name,
         ))
     return sessions
@@ -162,6 +164,7 @@ class Cluster:
             ],
             "titles": [s.title for s in self.sessions],
             "intent_seeds": [_clean_intent(s.intent_seed) for s in self.sessions],
+            "tool_sequence_per_session": [s.tool_sequence for s in self.sessions],
         }
 
 
