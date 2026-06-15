@@ -23,9 +23,15 @@ import click
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _lib.aggregator import aggregate, load_sessions  # noqa: E402
-from _lib.claude_runner import ClaudeRunError, run_claude, run_claude_json  # noqa: E402
-from _lib.judge_prompts import build_judge_prompt  # noqa: E402
+from _lib.candidate_schema import (  # noqa: E402
+    apply_recurrence_guard,
+    normalize_skill_type,
+    split_accepted,
+)
+from _lib.claude_runner import run_claude_json  # noqa: E402
+from _lib.judge_prompts import build_deepdive_prompt, build_triage_prompt  # noqa: E402
 from _lib.render_proposal import render_pattern_report  # noqa: E402
+from _lib.trace_loader import load_traces  # noqa: E402
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -52,11 +58,17 @@ def _list_installed_skills(skills_dir: Path) -> list[str]:
     show_default=True,
 )
 @click.option("--top-candidates", type=int, default=5, show_default=True)
+@click.option("--min-recurrence", type=int, default=2, show_default=True,
+              help="Reject candidates whose evidence spans fewer sessions.")
+@click.option("--max-deepdive", type=int, default=5, show_default=True,
+              help="Cap how many triaged candidates get a deep-dive LLM call.")
 @click.option("--timeout", type=float, default=180.0, show_default=True)
 def main(
     sessions_dir: Path,
     installed_skills_dir: Path,
     top_candidates: int,
+    min_recurrence: int,
+    max_deepdive: int,
     timeout: float,
 ) -> None:
     today = _date.today().isoformat()
@@ -77,29 +89,47 @@ def main(
 
     if not clusters:
         click.echo("[judge] no sessions → skipping LLM judge")
-        candidates: list[dict] = []
+        final: list[dict] = []
+        accepted: list[dict] = []
     else:
         installed = _list_installed_skills(installed_skills_dir)
-        prompt = build_judge_prompt(cluster_dicts, installed)
-        click.echo(f"[judge] calling `claude -p` (timeout={timeout}s)")
-        try:
-            raw = run_claude(prompt, timeout=timeout)
-            (out_dir / "_raw_judge_output.txt").write_text(raw, encoding="utf-8")
-            from _lib.claude_runner import extract_json_block
-            candidates = json.loads(extract_json_block(raw))
-            if not isinstance(candidates, list):
-                raise ValueError("expected JSON array at top level")
-        except (ClaudeRunError, ValueError, json.JSONDecodeError) as e:
-            click.echo(f"[judge] first parse failed: {e}; retrying via self-heal")
-            candidates = run_claude_json(prompt, timeout=timeout)
 
-    accepted = [c for c in candidates if not c.get("rejected_reason")]
-    accepted = sorted(
-        accepted,
-        key=lambda c: sum(c.get("score", {}).values()),
-        reverse=True,
-    )[:top_candidates]
-    final = accepted + [c for c in candidates if c.get("rejected_reason")]
+        # ── PASS 1: triage on summaries ──────────────────────────────────────
+        click.echo(f"[judge] triage: `claude -p` (timeout={timeout}s)")
+        triage_prompt = build_triage_prompt(cluster_dicts, installed)
+        triage = run_claude_json(triage_prompt, timeout=timeout)
+        (out_dir / "_raw_triage.txt").write_text(
+            json.dumps(triage, ensure_ascii=False, indent=2), encoding="utf-8")
+        triage = [normalize_skill_type(c) for c in triage]
+
+        # ── GUARD: code-level recurrence check ───────────────────────────────
+        triage = apply_recurrence_guard(triage, min_recurrence=min_recurrence)
+        accepted_triage, rejected = split_accepted(triage)
+        click.echo(
+            f"[judge] triage: {len(accepted_triage)} pass, {len(rejected)} rejected"
+        )
+        accepted_triage = accepted_triage[:max_deepdive]
+
+        # ── PASS 2: deep-dive over full ordered traces ───────────────────────
+        enriched: list[dict] = []
+        for c in accepted_triage:
+            src = c.get("evidence", {}).get("source_files", [])
+            traces = load_traces(src, sessions_dir)
+            click.echo(f"[judge] deep-dive: {c['name']} ({len(traces)} traces)")
+            dd = run_claude_json(build_deepdive_prompt(c, traces), timeout=timeout)
+            (out_dir / f"_raw_deepdive_{c['name']}.txt").write_text(
+                json.dumps(dd, ensure_ascii=False, indent=2), encoding="utf-8")
+            enriched.append({**c, **dd})
+
+        accepted = [c for c in enriched if not c.get("rejected_reason")]
+        accepted = sorted(
+            accepted,
+            key=lambda c: sum(c.get("final_score", c.get("prelim_score", {})).values()),
+            reverse=True,
+        )[:top_candidates]
+        rejected += [c for c in enriched if c.get("rejected_reason")]
+        final = accepted + rejected
+
     (out_dir / "candidate_skills.json").write_text(
         json.dumps(final, ensure_ascii=False, indent=2),
         encoding="utf-8",
