@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Runtime data (sessions, judge output, skill proposals)
+data/
+
+# pytest
+.pytest_cache/
