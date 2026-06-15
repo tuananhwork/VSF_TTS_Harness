@@ -59,3 +59,32 @@ def test_run_claude_json_parses_clean_output(mock_run) -> None:
         args=[], returncode=0, stdout='[{"a": 1}]', stderr=""
     )
     assert run_claude_json("prompt") == [{"a": 1}]
+
+
+@patch("_lib.claude_runner.subprocess.run")
+def test_run_claude_json_retries_when_first_output_is_garbage(mock_run) -> None:
+    mock_run.side_effect = [
+        subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="here's the thing without json", stderr="",
+        ),
+        subprocess.CompletedProcess(
+            args=[], returncode=0, stdout='[{"a": 1}]', stderr="",
+        ),
+    ]
+    assert run_claude_json("prompt") == [{"a": 1}]
+    assert mock_run.call_count == 2
+
+
+@patch("_lib.claude_runner.subprocess.run")
+def test_run_claude_json_propagates_second_failure(mock_run) -> None:
+    mock_run.side_effect = [
+        subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="garbage 1", stderr=""
+        ),
+        subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="garbage 2", stderr=""
+        ),
+    ]
+    with pytest.raises((json.JSONDecodeError, ValueError)):
+        run_claude_json("prompt")
