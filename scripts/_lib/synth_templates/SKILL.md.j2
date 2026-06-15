@@ -3,6 +3,7 @@ name: {{ name }}
 description: |
   VI: {{ trigger_vi }}
   EN: {{ trigger_en }}
+skill_type: {{ skill_type }}
 behavior_class: {{ behavior_class }}
 generated_by: pattern-mvp
 generated_on: {{ generated_on }}
@@ -18,7 +19,33 @@ risk_flags: [{{ risk_flags | join(", ") }}]
 
 ## Các bước / Steps
 
+{% if action_template %}
+{% for step in action_template %}
+{{ step.step }}. `{{ step.tool }}` — {{ step.input_shape }}
+{% endfor %}
+{% else %}
 {{ steps_markdown }}
+{% endif %}
+
+{% if good_points %}
+## Cách làm tốt / What works
+
+{% for g in good_points %}
+- {{ g }}
+{% endfor %}
+{% endif %}
+{% if weak_points %}
+## Điểm chưa tốt lần trước / Past pitfalls
+
+{% for w in weak_points %}
+- {{ w }}
+{% endfor %}
+{% endif %}
+{% if improvement_notes %}
+## Làm tốt hơn lần sau / Do better next time
+
+{{ improvement_notes }}
+{% endif %}
 
 ## Evidence
 

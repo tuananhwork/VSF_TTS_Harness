@@ -141,11 +141,16 @@ def render_skill_dir(
     skill_dir.mkdir(parents=True, exist_ok=True)
     ctx = {
         "name": candidate["name"],
+        "skill_type": candidate.get("skill_type", "process_macro"),
         "trigger_vi": candidate["trigger_intent"]["vi"],
         "trigger_en": candidate["trigger_intent"]["en"],
         "behavior_class": candidate.get("behavior_class", "process"),
         "risk_flags": candidate.get("risk_flags") or [],
         "evidence_session_ids": candidate.get("evidence", {}).get("session_ids", []),
+        "action_template": candidate.get("action_template") or [],
+        "good_points": candidate.get("good_points") or [],
+        "weak_points": candidate.get("weak_points") or [],
+        "improvement_notes": candidate.get("improvement_notes") or "",
         "generated_on": generated_on,
         "steps_markdown": filled["steps_markdown"],
         "golden_test_1": filled["golden_test_1"],

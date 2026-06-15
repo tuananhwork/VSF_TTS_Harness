@@ -39,20 +39,30 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 
 
 def _path_a_prompt(candidate: dict, skill_dir: Path) -> str:
+    skill_type = candidate.get("skill_type", "process_macro")
     return f"""Use the skill-creator skill. Create a new skill with these inputs.
 
 NAME: {candidate['name']}
+SKILL_TYPE: {skill_type}
 TRIGGER (VI): {candidate['trigger_intent']['vi']}
 TRIGGER (EN): {candidate['trigger_intent']['en']}
 BEHAVIOR_CLASS: {candidate.get('behavior_class', 'process')}
-ACTION_SEQUENCE_JSON: {json.dumps(candidate.get('action_template', []), ensure_ascii=False)}
+ACTION_TEMPLATE_JSON (ordered flow): {json.dumps(candidate.get('action_template', []), ensure_ascii=False)}
+GOOD_POINTS: {json.dumps(candidate.get('good_points', []), ensure_ascii=False)}
+WEAK_POINTS: {json.dumps(candidate.get('weak_points', []), ensure_ascii=False)}
+IMPROVEMENT_NOTES: {candidate.get('improvement_notes', '')}
 EVIDENCE_SESSION_IDS: {", ".join(candidate.get('evidence', {}).get('session_ids', []))}
 RISK_FLAGS: {", ".join(candidate.get('risk_flags', []))}
 
 OUTPUT FOLDER (absolute): {skill_dir}
 
 Requirements:
-- Write SKILL.md with frontmatter (name, description bilingual VI/EN).
+- Write SKILL.md with frontmatter (name, description bilingual VI/EN, skill_type).
+- If SKILL_TYPE is process_macro: document the ordered flow (step 1→2→3→4) from
+  ACTION_TEMPLATE_JSON so the user can re-run it quickly.
+- If SKILL_TYPE is improvement_lesson: centre the skill on WEAK_POINTS +
+  IMPROVEMENT_NOTES — what went wrong last time and what to do first next time
+  to avoid it. Keep the flow as supporting context.
 - Write golden_tests.md with 3 test cases derived from evidence.
 - Create scripts/ folder if action has deterministic steps; otherwise omit it.
 - If risk_flags include write_action or deletes_files, the skill must include

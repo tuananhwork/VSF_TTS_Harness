@@ -84,3 +84,58 @@ def test_render_skill_dir_writes_skill_and_golden_tests(tmp_path: Path) -> None:
     assert "khi cần tóm tắt PDF" in skill_md
     assert "1. read file" in skill_md
     assert "Q1" in golden and "E2" in golden
+
+
+def test_render_skill_dir_improvement_lesson_surfaces_weak_and_improve(tmp_path: Path) -> None:
+    candidate = {
+        "name": "summarize_better",
+        "skill_type": "improvement_lesson",
+        "trigger_intent": {"vi": "tóm tắt file", "en": "summarize file"},
+        "behavior_class": "inefficient",
+        "risk_flags": [],
+        "evidence": {"session_ids": ["s1", "s2"]},
+        "weak_points": ["phải làm lại vì thiếu ngữ cảnh"],
+        "improvement_notes": "hỏi rõ độ dài mong muốn trước khi tóm tắt",
+    }
+    filled = {
+        "steps_markdown": "1. read\n2. summarize",
+        "golden_test_1": {"query": "Q1", "expected": "E1"},
+        "golden_test_2": {"query": "Q2", "expected": "E2"},
+        "golden_test_3": {"query": "Q3", "expected": "E3"},
+    }
+    out = render_skill_dir(
+        candidate=candidate, filled=filled,
+        output_dir=tmp_path, generated_on="2026-06-15",
+    )
+    skill_md = (out / "SKILL.md").read_text(encoding="utf-8")
+    assert "improvement_lesson" in skill_md
+    assert "phải làm lại vì thiếu ngữ cảnh" in skill_md
+    assert "hỏi rõ độ dài mong muốn trước khi tóm tắt" in skill_md
+
+
+def test_render_skill_dir_process_macro_renders_ordered_flow(tmp_path: Path) -> None:
+    candidate = {
+        "name": "scan_edit_flow",
+        "skill_type": "process_macro",
+        "trigger_intent": {"vi": "quét rồi sửa", "en": "scan then edit"},
+        "behavior_class": "process",
+        "risk_flags": [],
+        "evidence": {"session_ids": ["s1", "s2"]},
+        "action_template": [
+            {"step": 1, "tool": "Read", "input_shape": "path"},
+            {"step": 2, "tool": "Edit", "input_shape": "diff"},
+        ],
+    }
+    filled = {
+        "steps_markdown": "fallback steps",
+        "golden_test_1": {"query": "Q1", "expected": "E1"},
+        "golden_test_2": {"query": "Q2", "expected": "E2"},
+        "golden_test_3": {"query": "Q3", "expected": "E3"},
+    }
+    out = render_skill_dir(
+        candidate=candidate, filled=filled,
+        output_dir=tmp_path, generated_on="2026-06-15",
+    )
+    skill_md = (out / "SKILL.md").read_text(encoding="utf-8")
+    assert "process_macro" in skill_md
+    assert "`Read`" in skill_md and "`Edit`" in skill_md
