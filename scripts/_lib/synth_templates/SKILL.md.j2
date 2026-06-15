@@ -1,0 +1,39 @@
+---
+name: {{ name }}
+description: |
+  VI: {{ trigger_vi }}
+  EN: {{ trigger_en }}
+behavior_class: {{ behavior_class }}
+generated_by: pattern-mvp
+generated_on: {{ generated_on }}
+risk_flags: [{{ risk_flags | join(", ") }}]
+---
+
+# {{ name }}
+
+## Khi nào dùng / When to use
+
+- **VI:** {{ trigger_vi }}
+- **EN:** {{ trigger_en }}
+
+## Các bước / Steps
+
+{{ steps_markdown }}
+
+## Evidence
+
+Skill được rút từ các session sau (xem `data/sessions_*/`):
+
+{% for sid in evidence_session_ids %}
+- `{{ sid }}`
+{% endfor %}
+
+## Risk flags
+
+{% if risk_flags %}
+{% for flag in risk_flags %}
+- `{{ flag }}`
+{% endfor %}
+{% else %}
+_None._
+{% endif %}
