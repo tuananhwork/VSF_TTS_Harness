@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from _lib.aggregator import (
+    Cluster,
     Session,
+    aggregate,
     cluster_by_tool_ngram,
     filter_by_size,
     load_sessions,
@@ -85,3 +87,45 @@ def test_filter_by_size_drops_below_threshold() -> None:
     g2 = [_mk_session("c", {})]
     result = filter_by_size([g1, g2], min_size=2)
     assert result == [g1]
+
+
+def test_aggregate_returns_clusters_with_metrics(sessions_dir: Path) -> None:
+    sessions = load_sessions(sessions_dir)
+    clusters = aggregate(sessions, min_size=1)  # min_size=1 so 4 fixtures show up
+    assert all(isinstance(c, Cluster) for c in clusters)
+    assert all(c.recurrence >= 1 for c in clusters)
+    # at least one cluster contains the high-retry fermat session
+    fermat_in = any(
+        any(s.process_name == "lucid-beautiful-fermat" for s in c.sessions)
+        for c in clusters
+    )
+    assert fermat_in
+
+
+def test_aggregate_metrics_classify_inefficient() -> None:
+    high_retry = _mk_session(
+        "h", {"click": 14}, title="Computer test",
+    )
+    high_retry = Session(
+        session_id="h", process_name="h", title="Computer test", intent_seed=None,
+        total_actions=14, total_user_turns=5, total_input_tokens=0,
+        total_output_tokens=0, duration_seconds=10.0,
+        tool_usage={"click": 14}, retry_count=13, correction_count=0,
+    )
+    other = Session(
+        session_id="h2", process_name="h2", title="Computer test", intent_seed=None,
+        total_actions=10, total_user_turns=5, total_input_tokens=0,
+        total_output_tokens=0, duration_seconds=10.0,
+        tool_usage={"click": 10}, retry_count=8, correction_count=0,
+    )
+    clusters = aggregate([high_retry, other], min_size=2)
+    assert len(clusters) == 1
+    assert clusters[0].behavior_class_hint == "inefficient"
+    assert clusters[0].retry_rate > 0.2
+
+
+def test_aggregate_filters_singletons_by_default(sessions_dir: Path) -> None:
+    sessions = load_sessions(sessions_dir)
+    clusters = aggregate(sessions, min_size=2)
+    # 4 fixtures with very different titles → likely 0 clusters of size >= 2
+    assert all(c.recurrence >= 2 for c in clusters)
