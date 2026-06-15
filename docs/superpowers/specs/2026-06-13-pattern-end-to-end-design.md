@@ -1,13 +1,13 @@
 # Pattern — End-to-end Pipeline Design (MVP)
 
-| Field | Value |
-| --- | --- |
-| Project | **Pattern** — Behavior → Skill harness for Claude Cowork |
-| Spec date | 2026-06-13 |
-| Author | Chu Bá Tuấn Anh (S.AI.20K) + brainstorming with Claude |
+| Field          | Value                                                                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project        | **Pattern** — Behavior → Skill harness for Claude Cowork                                                                                    |
+| Spec date      | 2026-06-13                                                                                                                                  |
+| Author         | Chu Bá Tuấn Anh (S.AI.20K) + brainstorming with Claude                                                                                      |
 | Companion docs | `docs/products/PRD.md` (full PRD), `docs/agent_responce/data_goal.md` (field schema), `docs/agent_responce/session_notes.md` (Lượt 1 notes) |
-| Scope | End-to-end MVP for **single-user, on-device** scenario. Lượt 1 done; this spec covers Lượt 2 (Judge) + Lượt 3 (Synthesis) + UX. |
-| Demo deadline | 2026-06-17 (T4) — CBLD report |
+| Scope          | End-to-end MVP for **single-user, on-device** scenario. Lượt 1 done; this spec covers Lượt 2 (Judge) + Lượt 3 (Synthesis) + UX.             |
+| Demo deadline  | 2026-06-17 (T4) — CBLD report                                                                                                               |
 
 ---
 
@@ -26,14 +26,14 @@ Spec này định nghĩa **how** triển khai pipeline end-to-end của Pattern 
 
 ## 2. Sáu quyết định chốt (kết quả brainstorming)
 
-| # | Decision | Chốt | Tại sao |
-| --- | --- | --- | --- |
-| 1 | **Data strategy** | Simulated workload (3 người chạy task lặp lại có chủ ý) | 4 sessions real không đủ recurrence cho judge; deadline 4 ngày không kịp tự nhiên |
-| 2 | **LLM execution model** | Claude Code headless (`claude -p`) cho cả Lượt 2 + Lượt 3 | User chỉ có Claude Code/Cowork subscription, không có Anthropic API key |
-| 3 | **Behavior focus** | 2/4 loại: Process orchestration + Inefficient/retry | Cover được cả "skill executable" và "anti-pattern note"; tín hiệu rõ trong JSONL |
-| 4 | **Aggregator** | Rule-based grouping (title-similarity + tool n-gram) | Simulated data có title chuẩn; tránh dep `sentence-transformers` (500MB) |
-| 5 | **Skill synthesis** | Path A: skill-creator headless. Fallback B: template-fill | Path A leverage Anthropic skill nếu work; Path B fallback an toàn |
-| 6 | **Proposal UX** | `PROPOSAL.md` (passive reading) + `accept.py` minimal (interactive install) | Demo CBLD show được cả 2 — đọc tổng quan + "moment of decision" |
+| #   | Decision                | Chốt                                                                        | Tại sao                                                                           |
+| --- | ----------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| 1   | **Data strategy**       | Simulated workload (3 người chạy task lặp lại có chủ ý)                     | 4 sessions real không đủ recurrence cho judge; deadline 4 ngày không kịp tự nhiên |
+| 2   | **LLM execution model** | Claude Code headless (`claude -p`) cho cả Lượt 2 + Lượt 3                   | User chỉ có Claude Code/Cowork subscription, không có Anthropic API key           |
+| 3   | **Behavior focus**      | 2/4 loại: Process orchestration + Inefficient/retry                         | Cover được cả "skill executable" và "anti-pattern note"; tín hiệu rõ trong JSONL  |
+| 4   | **Aggregator**          | Rule-based grouping (title-similarity + tool n-gram)                        | Simulated data có title chuẩn; tránh dep `sentence-transformers` (500MB)          |
+| 5   | **Skill synthesis**     | Path A: skill-creator headless. Fallback B: template-fill                   | Path A leverage Anthropic skill nếu work; Path B fallback an toàn                 |
+| 6   | **Proposal UX**         | `PROPOSAL.md` (passive reading) + `accept.py` minimal (interactive install) | Demo CBLD show được cả 2 — đọc tổng quan + "moment of decision"                   |
 
 ---
 
@@ -346,14 +346,14 @@ Pattern/
 
 ## 7. Test strategy
 
-| Component | Test type | Coverage target |
-| --- | --- | --- |
-| `aggregator.py` | Unit test (pytest) + fixture từ 4 sessions hiện có | ≥ 80% |
-| `render_proposal.py` | Unit test render với candidate JSON mock | ≥ 80% |
-| `claude_runner.py` | Mock subprocess + verify retry/timeout logic | ≥ 80% |
-| `judge.py`, `synth.py` (entry) | Smoke test với fixture, không call Claude thật | Smoke pass |
-| LLM judge prompt | Manual golden eval trên 5 cluster mẫu | Đạt với recall ≥ 70% |
-| Skill draft output | Manual review CBLD demo T4 | 1 skill draft chạy được trong Cowork |
+| Component                      | Test type                                          | Coverage target                      |
+| ------------------------------ | -------------------------------------------------- | ------------------------------------ |
+| `aggregator.py`                | Unit test (pytest) + fixture từ 4 sessions hiện có | ≥ 80%                                |
+| `render_proposal.py`           | Unit test render với candidate JSON mock           | ≥ 80%                                |
+| `claude_runner.py`             | Mock subprocess + verify retry/timeout logic       | ≥ 80%                                |
+| `judge.py`, `synth.py` (entry) | Smoke test với fixture, không call Claude thật     | Smoke pass                           |
+| LLM judge prompt               | Manual golden eval trên 5 cluster mẫu              | Đạt với recall ≥ 70%                 |
+| Skill draft output             | Manual review CBLD demo T4                         | 1 skill draft chạy được trong Cowork |
 
 Không unit test LLM call (kết quả không deterministic).
 
@@ -361,12 +361,12 @@ Không unit test LLM call (kết quả không deterministic).
 
 ## 8. Roadmap
 
-| Ngày | Việc bạn (+intern) | Việc code | Milestone |
-| --- | --- | --- | --- |
-| CN 14/06 | Brief intern 5 task types; bắt đầu simulate workload | Setup `tests/`, pyproject deps, xóa `main.py`, implement `aggregator.py` + unit test, `claude_runner.py` wrapper | Aggregator pass test với fixture |
-| T2 15/06 | Tiếp tục simulate; scan log thật | Implement `judge.py` + `judge_prompts.py` + `render_proposal.py`. Chạy thử end-to-end | `candidate_skills.json` có ≥ 2 candidate (1 process + 1 inefficient) |
-| T3 16/06 | Hỗ trợ test simulate edge case | Implement `synth.py` path A. Decision gate sáng: A work hay phải B. Implement B nếu cần. `accept.py`. Tune prompt judge | Full pipeline ra `PROPOSAL.md` + ≥ 1 skill draft hoàn chỉnh |
-| T4 17/06 | Dry-run, slide demo, gửi CBLD | Polish, `README.md`, demo flow | Demo 5 phút + báo cáo CBLD gửi đi |
+| Ngày     | Việc bạn (+intern)                                   | Việc code                                                                                                               | Milestone                                                            |
+| -------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| CN 14/06 | Brief intern 5 task types; bắt đầu simulate workload | Setup `tests/`, pyproject deps, xóa `main.py`, implement `aggregator.py` + unit test, `claude_runner.py` wrapper        | Aggregator pass test với fixture                                     |
+| T2 15/06 | Tiếp tục simulate; scan log thật                     | Implement `judge.py` + `judge_prompts.py` + `render_proposal.py`. Chạy thử end-to-end                                   | `candidate_skills.json` có ≥ 2 candidate (1 process + 1 inefficient) |
+| T3 16/06 | Hỗ trợ test simulate edge case                       | Implement `synth.py` path A. Decision gate sáng: A work hay phải B. Implement B nếu cần. `accept.py`. Tune prompt judge | Full pipeline ra `PROPOSAL.md` + ≥ 1 skill draft hoàn chỉnh          |
+| T4 17/06 | Dry-run, slide demo, gửi CBLD                        | Polish, `README.md`, demo flow                                                                                          | Demo 5 phút + báo cáo CBLD gửi đi                                    |
 
 ### 8.1 Simulated workload — 5 task types
 
@@ -392,16 +392,16 @@ Pre-record demo video backup (phòng case live fail network/Claude down).
 
 ## 9. Rủi ro & mitigation
 
-| # | Rủi ro | Likelihood | Impact | Mitigation |
-| --- | --- | --- | --- | --- |
-| 1 | Skill-creator headless không trigger được | Med | High | Fallback B template-fill; decision gate T3 sáng |
-| 2 | Simulated data quá "sạch" → judge ra candidate vô nghĩa | Med | Med | Brief intern intentional retry; threshold ≥ 2 |
-| 3 | Claude Code rate-limit subscription | Med | Med | Cap top-3, expo backoff, spaced theo giờ |
-| 4 | Prompt judge ra JSON sai format | High | Low | Validate + retry 1 lần, log raw output |
-| 5 | `audit.jsonl` schema thay đổi nếu Claude update | Low | High | Pin version Claude Desktop, scan.py log unknown event |
-| 6 | Demo T4 fail live (network, Claude down) | Low | Critical | Pre-record demo video backup; có JSON sample sẵn |
-| 7 | PII trong user_text lọt vào skill draft | Low (simulated) | Med | Skip mask cho MVP; ghi vào "future work" production |
-| 8 | Skill cài `~/.claude/skills/` không active trong Cowork (chỉ Claude Code) | Med | High | **Test sớm CN**; nếu fail → reframe demo bước 5 trong Claude Code thay vì Cowork |
+| #   | Rủi ro                                                                    | Likelihood      | Impact   | Mitigation                                                                       |
+| --- | ------------------------------------------------------------------------- | --------------- | -------- | -------------------------------------------------------------------------------- |
+| 1   | Skill-creator headless không trigger được                                 | Med             | High     | Fallback B template-fill; decision gate T3 sáng                                  |
+| 2   | Simulated data quá "sạch" → judge ra candidate vô nghĩa                   | Med             | Med      | Brief intern intentional retry; threshold ≥ 2                                    |
+| 3   | Claude Code rate-limit subscription                                       | Med             | Med      | Cap top-3, expo backoff, spaced theo giờ                                         |
+| 4   | Prompt judge ra JSON sai format                                           | High            | Low      | Validate + retry 1 lần, log raw output                                           |
+| 5   | `audit.jsonl` schema thay đổi nếu Claude update                           | Low             | High     | Pin version Claude Desktop, scan.py log unknown event                            |
+| 6   | Demo T4 fail live (network, Claude down)                                  | Low             | Critical | Pre-record demo video backup; có JSON sample sẵn                                 |
+| 7   | PII trong user_text lọt vào skill draft                                   | Low (simulated) | Med      | Skip mask cho MVP; ghi vào "future work" production                              |
+| 8   | Skill cài `~/.claude/skills/` không active trong Cowork (chỉ Claude Code) | Med             | High     | **Test sớm CN**; nếu fail → reframe demo bước 5 trong Claude Code thay vì Cowork |
 
 ---
 
@@ -419,12 +419,12 @@ Pre-record demo video backup (phòng case live fail network/Claude down).
 
 ## 11. Open issues — cần xử lý sớm
 
-| # | Issue | Khi nào test | Plan B nếu hỏng |
-| --- | --- | --- | --- |
-| 1 | Skill-creator có chạy headless `claude -p` không? | CN tối hoặc T2 sáng | Fallback B đã design sẵn |
-| 2 | `Path.home() / ".claude/skills/"` resolve sao trên Windows? | CN khi implement `accept.py` | Hardcode `C:\Users\<user>\.claude\skills\` + warn |
-| 3 | Skill cài `~/.claude/skills/` có active trong **Cowork** không, hay chỉ **Claude Code**? | **CN — ưu tiên cao nhất** | Reframe demo bước 5 chạy trong Claude Code |
-| 4 | Claude Code subscription rate-limit threshold? | T2 khi chạy judge thật | Spaced execution; cache prompt response |
+| #   | Issue                                                                                    | Khi nào test                 | Plan B nếu hỏng                                   |
+| --- | ---------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
+| 1   | Skill-creator có chạy headless `claude -p` không?                                        | CN tối hoặc T2 sáng          | Fallback B đã design sẵn                          |
+| 2   | `Path.home() / ".claude/skills/"` resolve sao trên Windows?                              | CN khi implement `accept.py` | Hardcode `C:\Users\<user>\.claude\skills\` + warn |
+| 3   | Skill cài `~/.claude/skills/` có active trong **Cowork** không, hay chỉ **Claude Code**? | **CN — ưu tiên cao nhất**    | Reframe demo bước 5 chạy trong Claude Code        |
+| 4   | Claude Code subscription rate-limit threshold?                                           | T2 khi chạy judge thật       | Spaced execution; cache prompt response           |
 
 ---
 

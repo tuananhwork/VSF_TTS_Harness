@@ -1,13 +1,13 @@
 # PRD — Tự động đúc rút Skill từ hành vi user với Claude Cowork
 
-| Field            | Value                                                                          |
-| ---------------- | ------------------------------------------------------------------------------ |
-| Tên dự án        | **Pattern** — Behavior → Skill harness for Claude Cowork                       |
-| Ngày soạn        | 2026-06-12                                                                     |
-| Phạm vi MVP      | **Một nhân viên, trên máy của chính họ** (single-user, on-device)              |
-| Mã nguồn         | `C:\Users\chuba\Workspace\VSF\Pattern`                                         |
-| Stakeholder      | Bùi Trung Hiếu (shadow), Phạm Khánh Hòa (architect), 3 intern (PIC)            |
-| Deadline (sơ bộ) | Báo cáo khả thi: 2026-06-12 • Sơ bộ: T2 • Test: T3 • Final CBLD: T4            |
+| Field            | Value                                                               |
+| ---------------- | ------------------------------------------------------------------- |
+| Tên dự án        | **Pattern** — Behavior → Skill harness for Claude Cowork            |
+| Ngày soạn        | 2026-06-12                                                          |
+| Phạm vi MVP      | **Một nhân viên, trên máy của chính họ** (single-user, on-device)   |
+| Mã nguồn         | `C:\Users\chuba\Workspace\VSF\Pattern`                              |
+| Stakeholder      | Bùi Trung Hiếu (shadow), Phạm Khánh Hòa (architect), 3 intern (PIC) |
+| Deadline (sơ bộ) | Báo cáo khả thi: 2026-06-12 • Sơ bộ: T2 • Test: T3 • Final CBLD: T4 |
 
 ---
 
@@ -101,16 +101,16 @@ MVP độc lập business). Khi lên Meta-agent, thêm *business critique + fina
 
 Xem `docs/data_goal.md` cho bảng đầy đủ. Tóm tắt:
 
-| Lớp                 | Field then chốt                                                |
-| ------------------- | -------------------------------------------------------------- |
-| L0 Anchor           | `session_id`, `workspace_id`, `tool_use_id`, `parent_tool_use_id` |
-| L1 Temporal         | `ts`, `created_at`, `last_activity_at`, `duration_seconds`     |
-| L2 Intent           | `title`, `intent_seed`, `user_text`                            |
-| L3 Action atom      | `tool_name`, `mcp_server`, `input_summary`, `result_ok`        |
-| L4 Workflow         | `turn.idx` + `turn.actions[]` giữ thứ tự gốc                   |
-| L5 Context/Env      | `model`, `user_selected_folders`, `process_name`               |
-| L6 Feedback         | `feedback_flag ∈ {correction, confirm, retry}` + counters      |
-| L7 Outcome          | `input/output_tokens`, `rate_limit_hits`, `outputs_produced`, `tool_usage` |
+| Lớp            | Field then chốt                                                            |
+| -------------- | -------------------------------------------------------------------------- |
+| L0 Anchor      | `session_id`, `workspace_id`, `tool_use_id`, `parent_tool_use_id`          |
+| L1 Temporal    | `ts`, `created_at`, `last_activity_at`, `duration_seconds`                 |
+| L2 Intent      | `title`, `intent_seed`, `user_text`                                        |
+| L3 Action atom | `tool_name`, `mcp_server`, `input_summary`, `result_ok`                    |
+| L4 Workflow    | `turn.idx` + `turn.actions[]` giữ thứ tự gốc                               |
+| L5 Context/Env | `model`, `user_selected_folders`, `process_name`                           |
+| L6 Feedback    | `feedback_flag ∈ {correction, confirm, retry}` + counters                  |
+| L7 Outcome     | `input/output_tokens`, `rate_limit_hits`, `outputs_produced`, `tool_usage` |
 
 ### 5.3 Test run 2026-06-12
 
@@ -132,12 +132,12 @@ Toàn bộ JSONL của 1 user trong cửa sổ Δt (mặc định: 7 ngày).
 
 ### 6.2 Phân loại 4 hành vi cần bắt (theo anh Hiếu)
 
-| Loại                       | Tín hiệu trong JSONL                                                                   |
-| -------------------------- | -------------------------------------------------------------------------------------- |
-| **Chốt decisions**         | Pattern `user_text` xác nhận → assistant `tool_use` có side-effect (write/delete)      |
-| **Kém hiệu quả / lỗi lặp** | `feedback_flag = retry` hoặc `correction` cao; cùng `(tool_name, hash(input))` lặp     |
-| **Nhận thức hệ thống kém** | `user_text` dài bất thường / lặp prompt; `intent_seed` mơ hồ → nhiều turn correction   |
-| **Điều phối quy trình**    | Chuỗi `tool_use` ổn định ≥ N lần qua các session, kèm `success_check` (kết quả ok)     |
+| Loại                       | Tín hiệu trong JSONL                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| **Chốt decisions**         | Pattern `user_text` xác nhận → assistant `tool_use` có side-effect (write/delete)    |
+| **Kém hiệu quả / lỗi lặp** | `feedback_flag = retry` hoặc `correction` cao; cùng `(tool_name, hash(input))` lặp   |
+| **Nhận thức hệ thống kém** | `user_text` dài bất thường / lặp prompt; `intent_seed` mơ hồ → nhiều turn correction |
+| **Điều phối quy trình**    | Chuỗi `tool_use` ổn định ≥ N lần qua các session, kèm `success_check` (kết quả ok)   |
 
 ### 6.3 3 trục đánh giá khi rút pattern (từ `data_goal.md`)
 
@@ -199,11 +199,11 @@ C. Critique LLM (lượt phản biện)
 
 ### 7.3 3 câu hỏi mỗi Skill phải trả lời
 
-| Câu hỏi             | Tài liệu kèm                                                         |
-| ------------------- | -------------------------------------------------------------------- |
-| Khi nào thì viết    | `trigger` (description) song ngữ Việt–Anh trong frontmatter           |
-| Viết như thế nào    | `SKILL.md` steps + reference scripts                                 |
-| Có tính sử dụng không | `tests/unit/` cho script + `tests/eval/golden.md` cho LLM behavior   |
+| Câu hỏi               | Tài liệu kèm                                                       |
+| --------------------- | ------------------------------------------------------------------ |
+| Khi nào thì viết      | `trigger` (description) song ngữ Việt–Anh trong frontmatter        |
+| Viết như thế nào      | `SKILL.md` steps + reference scripts                               |
+| Có tính sử dụng không | `tests/unit/` cho script + `tests/eval/golden.md` cho LLM behavior |
 
 ### 7.4 Pipeline synthesis
 
@@ -235,13 +235,13 @@ candidate_skills.json
 
 ## 8. Tiêu chí thành công (MVP)
 
-| Tiêu chí                                                                | Ngưỡng đề xuất                  |
-| ----------------------------------------------------------------------- | ------------------------------- |
-| Tỷ lệ pattern Lượt 2 phát hiện → user xác nhận "đúng quy trình của tôi" | ≥ 70%                           |
-| Tỷ lệ Skill Lượt 3 đề xuất → user chấp nhận lưu                          | ≥ 30%                           |
-| Tỷ lệ Skill đã lưu được trigger lại trong 7 ngày kế tiếp                 | ≥ 50% (đo qua scan lượt tiếp)   |
-| Số false-positive pattern (đề xuất nhưng user reject)                   | ≤ 30%                           |
-| Skill có thao tác ghi/xoá có bước confirm                               | 100%                            |
+| Tiêu chí                                                                | Ngưỡng đề xuất                |
+| ----------------------------------------------------------------------- | ----------------------------- |
+| Tỷ lệ pattern Lượt 2 phát hiện → user xác nhận "đúng quy trình của tôi" | ≥ 70%                         |
+| Tỷ lệ Skill Lượt 3 đề xuất → user chấp nhận lưu                         | ≥ 30%                         |
+| Tỷ lệ Skill đã lưu được trigger lại trong 7 ngày kế tiếp                | ≥ 50% (đo qua scan lượt tiếp) |
+| Số false-positive pattern (đề xuất nhưng user reject)                   | ≤ 30%                         |
+| Skill có thao tác ghi/xoá có bước confirm                               | 100%                          |
 
 Vòng feedback: scan lượt sau sẽ thấy skill nào được trigger / bị user sửa output → đầu vào cho Lượt 2 chu kỳ kế tiếp (vòng tự tối ưu).
 
@@ -249,25 +249,25 @@ Vòng feedback: scan lượt sau sẽ thấy skill nào được trigger / bị 
 
 ## 9. Rủi ro chính
 
-| Rủi ro                                                       | Mức   | Biện pháp                                                             |
-| ------------------------------------------------------------ | ----- | --------------------------------------------------------------------- |
-| Sample 1 user, 1 tuần quá ít → judge over-fit                | Cao   | Yêu cầu ≥ 3 lần lặp/cluster; pilot ≥ 2 tuần trước khi tin output      |
-| Skill sinh ra dùng tool có side-effect (delete, send mail)   | Cao   | `risk_flags` trong candidate; bắt buộc confirm hook; loại auto-publish |
-| PII trong `user_text` lọt vào Skill draft                    | Cao   | Bước mask trước Lượt 2; reviewer check trước khi lưu                  |
-| Judge bám business → mất tổng quát                           | Trung | Prompt judge cấm context business; test trên domain trộn               |
-| `audit.jsonl` thay đổi schema khi Claude update              | Trung | Pin version Claude Desktop trong README; scan.py log unknown event type |
-| User không chịu review Skill proposal                        | Trung | Báo cáo gọn, top 3; nhúng vào nhịp công việc (cuối tuần)              |
+| Rủi ro                                                     | Mức   | Biện pháp                                                               |
+| ---------------------------------------------------------- | ----- | ----------------------------------------------------------------------- |
+| Sample 1 user, 1 tuần quá ít → judge over-fit              | Cao   | Yêu cầu ≥ 3 lần lặp/cluster; pilot ≥ 2 tuần trước khi tin output        |
+| Skill sinh ra dùng tool có side-effect (delete, send mail) | Cao   | `risk_flags` trong candidate; bắt buộc confirm hook; loại auto-publish  |
+| PII trong `user_text` lọt vào Skill draft                  | Cao   | Bước mask trước Lượt 2; reviewer check trước khi lưu                    |
+| Judge bám business → mất tổng quát                         | Trung | Prompt judge cấm context business; test trên domain trộn                |
+| `audit.jsonl` thay đổi schema khi Claude update            | Trung | Pin version Claude Desktop trong README; scan.py log unknown event type |
+| User không chịu review Skill proposal                      | Trung | Báo cáo gọn, top 3; nhúng vào nhịp công việc (cuối tuần)                |
 
 ---
 
 ## 10. Mốc thời gian (theo deadline anh Hiếu)
 
-| Mốc        | Deliverable                                                                  |
-| ---------- | ---------------------------------------------------------------------------- |
-| Hôm nay    | Báo cáo khả thi + PRD này + scan.py chạy được trên log thật                  |
-| Thứ 2      | Sơ bộ Lượt 2: aggregator + prompt judge v0 + sample candidate_skills.json    |
-| Thứ 3      | Test kỹ Lượt 2 + sơ bộ Lượt 3 (skill-creator integration) trên 1 candidate   |
-| Thứ 4      | Hoàn thiện end-to-end demo: scan → judge → 1 Skill đã lưu + gửi CBLD         |
+| Mốc     | Deliverable                                                                |
+| ------- | -------------------------------------------------------------------------- |
+| Hôm nay | Báo cáo khả thi + PRD này + scan.py chạy được trên log thật                |
+| Thứ 2   | Sơ bộ Lượt 2: aggregator + prompt judge v0 + sample candidate_skills.json  |
+| Thứ 3   | Test kỹ Lượt 2 + sơ bộ Lượt 3 (skill-creator integration) trên 1 candidate |
+| Thứ 4   | Hoàn thiện end-to-end demo: scan → judge → 1 Skill đã lưu + gửi CBLD       |
 
 ---
 
