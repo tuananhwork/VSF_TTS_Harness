@@ -31,7 +31,7 @@ Output: `data/sessions_<date>_runAt_<runTs>/`.
 ```bash
 uv run python scripts/judge.py \
     --sessions-dir data/sessions_<date>_runAt_<runTs> \
-    --min-size 2 --top-candidates 5
+    --top-candidates 5
 ```
 
 Output: `data/judge_<date>/{cluster_summary.json, pattern_report.md, candidate_skills.json}`.

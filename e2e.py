@@ -2,10 +2,12 @@
 
 Usage:
     uv run e2e.py
+    uv run e2e.py --sessions-dir data/sessions_synthetic_test  # skip scan, use existing dir
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
@@ -30,16 +32,26 @@ def _run(*args: str) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--sessions-dir",
+        help="Skip scan.py and use this existing sessions directory instead.",
+    )
+    args = parser.parse_args()
+
     _run("uv", "sync")
 
-    _run(sys.executable, "scripts/scan.py")
-    sessions_dir = _latest("sessions_*_runAt_*")
+    if args.sessions_dir:
+        sessions_dir = Path(args.sessions_dir)
+    else:
+        _run(sys.executable, "scripts/scan.py")
+        sessions_dir = _latest("sessions_*_runAt_*")
     print(f"[e2e] sessions: {sessions_dir}")
 
     _run(
         sys.executable, "scripts/judge.py",
         "--sessions-dir", str(sessions_dir),
-        "--min-size", "2", "--top-candidates", "5",
+        "--top-candidates", "5",
     )
     judge_dir = _latest("judge_*")
     print(f"[e2e] judge: {judge_dir}")

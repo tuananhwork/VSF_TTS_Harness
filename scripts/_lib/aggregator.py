@@ -1,13 +1,16 @@
-"""Rule-based session clustering for Pattern's Lượt 2 judge stage.
+"""Rule-based session pre-grouping for Pattern's Lượt 2 judge stage.
 
 Pure Python. No LLM. Takes per-session JSONL produced by scripts/scan.py and
-groups sessions whose behaviour looks similar, so the judge prompt sees small
-focused clusters instead of raw noise.
+does a loose grouping by tool usage so the judge prompt sees manageable
+chunks. Whether sessions across groups share the *same intent* (e.g. "Tóm
+tắt file ..." regardless of which file/title) is left to the LLM judge, since
+titles are auto-generated per session and vary even for the same task.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -115,54 +118,17 @@ def cluster_by_tool_ngram(
     return clusters
 
 
-import re
-import unicodedata
+_UPLOADED_FILES_RE = re.compile(r"<uploaded_files>.*?</uploaded_files>", re.DOTALL)
 
 
-_PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
-
-
-def _normalize_title(title: str | None) -> frozenset[str]:
-    if not title:
-        return frozenset()
-    folded = unicodedata.normalize("NFC", title).lower()
-    stripped = _PUNCT_RE.sub(" ", folded)
-    tokens = [t for t in stripped.split() if len(t) >= 2]
-    return frozenset(tokens)
-
-
-def subcluster_by_title(
-    sessions: Iterable[Session],
-    *,
-    jaccard_threshold: float = 0.5,
-) -> list[list[Session]]:
-    """Sub-cluster by title token Jaccard. Sessions with missing/empty titles
-    are never grouped together (defensive: avoid false positives)."""
-    groups: list[list[Session]] = []
-    keys: list[frozenset[str]] = []
-    for session in sessions:
-        key = _normalize_title(session.title)
-        if not key:
-            groups.append([session])
-            keys.append(key)
-            continue
-        placed = False
-        for idx, repr_key in enumerate(keys):
-            if repr_key and _jaccard(key, repr_key) >= jaccard_threshold:
-                groups[idx].append(session)
-                keys[idx] = repr_key | key
-                placed = True
-                break
-        if not placed:
-            groups.append([session])
-            keys.append(key)
-    return groups
-
-
-def filter_by_size(
-    clusters: Iterable[list[Session]], *, min_size: int
-) -> list[list[Session]]:
-    return [c for c in clusters if len(c) >= min_size]
+def _clean_intent(text: str | None) -> str | None:
+    """Strip the `<uploaded_files>...</uploaded_files>` block (file paths and
+    uuids differ on every upload, so they'd block the LLM from recognizing
+    the same intent across sessions) and surrounding whitespace."""
+    if not text:
+        return text
+    cleaned = _UPLOADED_FILES_RE.sub("", text).strip()
+    return cleaned or text.strip()
 
 
 @dataclass
@@ -195,6 +161,7 @@ class Cluster:
                 for s in self.sessions
             ],
             "titles": [s.title for s in self.sessions],
+            "intent_seeds": [_clean_intent(s.intent_seed) for s in self.sessions],
         }
 
 
@@ -238,17 +205,17 @@ def _build_cluster(group: list[Session]) -> Cluster:
 def aggregate(
     sessions: list[Session],
     *,
-    min_size: int = 2,
     top_n: int = 3,
     tool_threshold: float = 0.6,
-    title_threshold: float = 0.5,
 ) -> list[Cluster]:
-    """End-to-end clustering pipeline: tool ngram → title sub-cluster → filter → metrics."""
+    """Loose pre-grouping by tool-usage n-gram, with per-group metrics.
+
+    Groups (including singletons) are all passed through — recognizing
+    whether two groups represent the same recurring intent (e.g. same
+    "summarize uploaded file" request with different auto-generated titles)
+    is left to the LLM judge.
+    """
     tool_clusters = cluster_by_tool_ngram(
         sessions, top_n=top_n, jaccard_threshold=tool_threshold
     )
-    refined: list[list[Session]] = []
-    for tc in tool_clusters:
-        refined.extend(subcluster_by_title(tc, jaccard_threshold=title_threshold))
-    sized = filter_by_size(refined, min_size=min_size)
-    return [_build_cluster(g) for g in sized]
+    return [_build_cluster(g) for g in tool_clusters]

@@ -4,7 +4,7 @@ Usage:
     python scripts/judge.py \\
         --sessions-dir data/sessions_2026-06-13_runAt_<runTs> \\
         [--installed-skills-dir ~/.claude/skills] \\
-        [--min-size 2] [--top-candidates 5]
+        [--top-candidates 5]
 
 Outputs to data/judge_<date>/{cluster_summary.json, pattern_report.md,
 candidate_skills.json, _raw_judge_output.txt}.
@@ -51,13 +51,11 @@ def _list_installed_skills(skills_dir: Path) -> list[str]:
     default=Path.home() / ".claude" / "skills",
     show_default=True,
 )
-@click.option("--min-size", type=int, default=2, show_default=True)
 @click.option("--top-candidates", type=int, default=5, show_default=True)
 @click.option("--timeout", type=float, default=180.0, show_default=True)
 def main(
     sessions_dir: Path,
     installed_skills_dir: Path,
-    min_size: int,
     top_candidates: int,
     timeout: float,
 ) -> None:
@@ -69,16 +67,16 @@ def main(
     sessions = load_sessions(sessions_dir)
     click.echo(f"[judge] loaded {len(sessions)} sessions")
 
-    clusters = aggregate(sessions, min_size=min_size)
+    clusters = aggregate(sessions)
     cluster_dicts = [c.to_dict() for c in clusters]
     (out_dir / "cluster_summary.json").write_text(
         json.dumps(cluster_dicts, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    click.echo(f"[judge] {len(clusters)} clusters after filter (min_size={min_size})")
+    click.echo(f"[judge] {len(clusters)} tool-usage group(s)")
 
     if not clusters:
-        click.echo("[judge] no clusters → skipping LLM judge")
+        click.echo("[judge] no sessions → skipping LLM judge")
         candidates: list[dict] = []
     else:
         installed = _list_installed_skills(installed_skills_dir)
