@@ -18,6 +18,7 @@ from typing import Any
 
 
 CLAUDE_BIN = "claude"
+DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
 class ClaudeRunError(RuntimeError):
@@ -73,13 +74,15 @@ def extract_json_block(raw: str) -> str:
     raise ValueError("unbalanced JSON brackets in output")
 
 
-def run_claude(prompt: str, *, timeout: float = 180.0) -> str:
-    """Invoke `claude -p <prompt>` and return stdout. Raises on non-zero exit."""
+def run_claude(prompt: str, *, timeout: float = 180.0, model: str = DEFAULT_MODEL) -> str:
+    """Invoke `claude -p <prompt> --model <model>` and return stdout. Raises on non-zero exit."""
     try:
         result = subprocess.run(
-            [CLAUDE_BIN, "-p", prompt],
+            [CLAUDE_BIN, "-p", prompt, "--model", model],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as e:
@@ -93,9 +96,9 @@ def run_claude(prompt: str, *, timeout: float = 180.0) -> str:
     return result.stdout
 
 
-def run_claude_json(prompt: str, *, timeout: float = 180.0) -> Any:
+def run_claude_json(prompt: str, *, timeout: float = 180.0, model: str = DEFAULT_MODEL) -> Any:
     """Run prompt and parse the output as JSON. One self-heal retry on parse fail."""
-    raw = run_claude(prompt, timeout=timeout)
+    raw = run_claude(prompt, timeout=timeout, model=model)
     try:
         return json.loads(extract_json_block(raw))
     except (json.JSONDecodeError, ValueError) as first_err:
@@ -104,5 +107,5 @@ def run_claude_json(prompt: str, *, timeout: float = 180.0) -> Any:
             "with no prose. Output JSON only.\n\n"
             f"PARSE_ERROR: {first_err}\n\nORIGINAL:\n{raw}"
         )
-        raw2 = run_claude(repair_prompt, timeout=min(60.0, timeout))
+        raw2 = run_claude(repair_prompt, timeout=min(60.0, timeout), model=model)
         return json.loads(extract_json_block(raw2))
