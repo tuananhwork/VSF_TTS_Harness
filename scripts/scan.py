@@ -90,6 +90,7 @@ class SessionSummary:
     total_input_tokens: int
     total_output_tokens: int
     tool_usage: dict[str, int]
+    tool_sequence: list[str]
     mcp_usage: dict[str, int]
     correction_count: int
     confirm_count: int
@@ -132,6 +133,22 @@ def iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
                 yield json.loads(line)
             except json.JSONDecodeError:
                 continue
+
+
+def compress_runs(seq: list[str]) -> list[str]:
+    """Collapse consecutive duplicate tool names: [A,A,B] -> [A×2, B].
+
+    Preserves order; keeps the flow readable for the LLM judge while marking
+    repetition (e.g. a tight retry loop shows up as `click×6`)."""
+    out: list[str] = []
+    for name in seq:
+        if out and out[-1].split("×")[0] == name:
+            prev = out[-1].split("×")
+            k = int(prev[1]) + 1 if len(prev) == 2 else 2
+            out[-1] = f"{name}×{k}"
+        else:
+            out.append(name)
+    return out
 
 
 def split_tool_name(name: str) -> tuple[str, str]:
@@ -215,6 +232,7 @@ def parse_session(
     turns: list[TurnRecord] = []
     rate_limits: list[dict[str, Any]] = []
     tool_usage: dict[str, int] = {}
+    tool_sequence: list[str] = []
     mcp_usage: dict[str, int] = {}
     actions_by_tool_use_id: dict[str, ActionRecord] = {}
     last_tool_seen: dict[tuple[str, str], datetime] = {}
@@ -310,6 +328,7 @@ def parse_session(
                     name = block.get("name", "")
                     mcp, _ = split_tool_name(name)
                     tool_usage[name] = tool_usage.get(name, 0) + 1
+                    tool_sequence.append(name)
                     mcp_usage[mcp] = mcp_usage.get(mcp, 0) + 1
                     trimmed = trim_input(block.get("input"))
                     ihash = hash_input(trimmed)
@@ -370,6 +389,7 @@ def parse_session(
         total_input_tokens=sum(t.input_tokens for t in turns),
         total_output_tokens=sum(t.output_tokens for t in turns),
         tool_usage=dict(sorted(tool_usage.items(), key=lambda kv: -kv[1])),
+        tool_sequence=compress_runs(tool_sequence),
         mcp_usage=dict(sorted(mcp_usage.items(), key=lambda kv: -kv[1])),
         correction_count=sum(1 for t in turns if t.feedback_flag == "correction"),
         confirm_count=sum(1 for t in turns if t.feedback_flag == "confirm"),
