@@ -233,7 +233,7 @@
             <li><b>Discover</b> session theo cây <code>user/workspace/local_*</code></li>
             <li><b>Filter theo ngày</b> (<code>TARGET_DATE</code>, mặc định hôm nay) — giữ session có cửa sổ [createdAt, lastActivityAt] chạm ngày</li>
             <li><b>Parse <code>audit.jsonl</code></b>: dedupe theo uuid, tách turn user / assistant, gom tool_use + tool_result</li>
-            <li><b>Heuristic feedback</b>: gắn cờ <code>correction</code> / <code>confirm</code> / <code>retry</code> (retry = cùng tool+input ≤ 60s)</li>
+            <li><b>Tín hiệu cấu trúc</b>: gắn cờ <code>repeat</code> (chạy lại cùng tool ở turn sau ≤ 60s) / <code>pivot</code> (user bẻ hướng tool — Jaccard tập tool trước/sau ≥ 0.5). Không keyword, độc lập ngôn ngữ.</li>
             <li><b>Compress runs</b>: <code>[A,A,B] → [A×2, B]</code> giữ flow gọn cho judge</li>
             <li><b>Tổng hợp</b> tool_usage, tool_sequence, mcp_usage, token, outputs_produced</li>
           </ul>
@@ -298,7 +298,7 @@
             </div>
             <div class="card lesson">
               <h4>🩹 improvement_lesson</h4>
-              <p>Session lắm retry/correction → bài học <span class="k">"lần sau làm X trước"</span>.</p>
+              <p>Session lắm repeat/pivot → bài học <span class="k">"lần sau làm X trước"</span>.</p>
             </div>
           </div>
         </div>

@@ -30,8 +30,8 @@ class Session:
     total_output_tokens: int
     duration_seconds: float | None
     tool_usage: dict[str, int]
-    retry_count: int
-    correction_count: int
+    repeat_count: int
+    pivot_count: int
     tool_sequence: list[str] = field(default_factory=list)
     source_file: str = ""
 
@@ -68,8 +68,8 @@ def load_sessions(sessions_dir: Path) -> list[Session]:
             total_output_tokens=int(rec.get("total_output_tokens") or 0),
             duration_seconds=rec.get("duration_seconds"),
             tool_usage=dict(rec.get("tool_usage") or {}),
-            retry_count=int(rec.get("retry_count") or 0),
-            correction_count=int(rec.get("correction_count") or 0),
+            repeat_count=int(rec.get("repeat_count") or 0),
+            pivot_count=int(rec.get("pivot_count") or 0),
             tool_sequence=list(rec.get("tool_sequence") or []),
             source_file=jsonl_path.name,
         ))
@@ -139,8 +139,8 @@ class Cluster:
     representative_tools: list[str]
     representative_titles: list[str]
     recurrence: int
-    retry_rate: float
-    correction_rate: float
+    repeat_rate: float
+    pivot_rate: float
     avg_duration_seconds: float
     total_tokens: int
     behavior_class_hint: str  # "process" | "inefficient" | "unclear"
@@ -153,8 +153,8 @@ class Cluster:
             "representative_tools": self.representative_tools,
             "representative_titles": self.representative_titles,
             "recurrence": self.recurrence,
-            "retry_rate": round(self.retry_rate, 3),
-            "correction_rate": round(self.correction_rate, 3),
+            "repeat_rate": round(self.repeat_rate, 3),
+            "pivot_rate": round(self.pivot_rate, 3),
             "avg_duration_seconds": round(self.avg_duration_seconds, 1),
             "total_tokens": self.total_tokens,
             "behavior_class_hint": self.behavior_class_hint,
@@ -168,22 +168,22 @@ class Cluster:
         }
 
 
-def _classify(retry_rate: float, recurrence: int) -> str:
-    if retry_rate >= 0.2:
+def _classify(repeat_rate: float, recurrence: int) -> str:
+    if repeat_rate >= 0.2:
         return "inefficient"
-    if retry_rate < 0.1 and recurrence >= 3:
+    if repeat_rate < 0.1 and recurrence >= 3:
         return "process"
     return "unclear"
 
 
 def _build_cluster(group: list[Session]) -> Cluster:
     n = len(group)
-    retry_rate = (
-        sum(s.retry_count / s.total_actions for s in group if s.total_actions)
+    repeat_rate = (
+        sum(s.repeat_count / s.total_actions for s in group if s.total_actions)
         / max(1, sum(1 for s in group if s.total_actions))
     )
-    correction_rate = (
-        sum(s.correction_count / s.total_user_turns for s in group if s.total_user_turns)
+    pivot_rate = (
+        sum(s.pivot_count / s.total_user_turns for s in group if s.total_user_turns)
         / max(1, sum(1 for s in group if s.total_user_turns))
     )
     avg_duration = sum((s.duration_seconds or 0.0) for s in group) / n
@@ -197,11 +197,11 @@ def _build_cluster(group: list[Session]) -> Cluster:
         representative_tools=sorted(rep_tools),
         representative_titles=[s.title for s in group if s.title],
         recurrence=n,
-        retry_rate=retry_rate,
-        correction_rate=correction_rate,
+        repeat_rate=repeat_rate,
+        pivot_rate=pivot_rate,
         avg_duration_seconds=avg_duration,
         total_tokens=total_tokens,
-        behavior_class_hint=_classify(retry_rate, n),
+        behavior_class_hint=_classify(repeat_rate, n),
     )
 
 

@@ -24,7 +24,7 @@ def _turns() -> list[dict]:
         {"role": "assistant", "user_text": None, "feedback_flag": None,
          "actions": [{"tool_name": "Read"}, {"tool_name": "Edit"},
                      {"tool_name": "Edit"}]},
-        {"role": "user", "user_text": "sai rồi, làm lại", "feedback_flag": "correction",
+        {"role": "user", "user_text": "sai rồi, làm lại", "feedback_flag": "pivot",
          "actions": []},
     ]
 
@@ -39,7 +39,7 @@ def test_load_trace_preserves_order_and_markers(tmp_path: Path) -> None:
     assert trace[1] == {"role": "assistant", "tools": ["Read", "Edit×2"],
                         "feedback": None}
     assert trace[2]["role"] == "user"
-    assert trace[2]["feedback"] == "correction"
+    assert trace[2]["feedback"] == "pivot"
 
 
 def test_load_trace_truncates_long_text(tmp_path: Path) -> None:

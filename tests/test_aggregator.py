@@ -21,7 +21,7 @@ def _mk_session(
         session_id=sid, process_name=sid, title=title, intent_seed=intent_seed,
         total_actions=sum(tools.values()), total_user_turns=0,
         total_input_tokens=0, total_output_tokens=0, duration_seconds=0.0,
-        tool_usage=tools, retry_count=0, correction_count=0,
+        tool_usage=tools, repeat_count=0, pivot_count=0,
         tool_sequence=tool_sequence or [],
     )
 
@@ -95,18 +95,18 @@ def test_aggregate_metrics_classify_inefficient() -> None:
         session_id="h", process_name="h", title="Computer test", intent_seed=None,
         total_actions=14, total_user_turns=5, total_input_tokens=0,
         total_output_tokens=0, duration_seconds=10.0,
-        tool_usage={"click": 14}, retry_count=13, correction_count=0,
+        tool_usage={"click": 14}, repeat_count=13, pivot_count=0,
     )
     other = Session(
         session_id="h2", process_name="h2", title="Computer test", intent_seed=None,
         total_actions=10, total_user_turns=5, total_input_tokens=0,
         total_output_tokens=0, duration_seconds=10.0,
-        tool_usage={"click": 10}, retry_count=8, correction_count=0,
+        tool_usage={"click": 10}, repeat_count=8, pivot_count=0,
     )
     clusters = aggregate([high_retry, other])
     assert len(clusters) == 1
     assert clusters[0].behavior_class_hint == "inefficient"
-    assert clusters[0].retry_rate > 0.2
+    assert clusters[0].repeat_rate > 0.2
 
 
 def test_aggregate_includes_singleton_groups(sessions_dir: Path) -> None:

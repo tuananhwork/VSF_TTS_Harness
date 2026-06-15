@@ -2,9 +2,9 @@
 
 Where aggregator.py works on count-aggregated summaries (cheap triage), the
 deep-dive needs to *see the flow*: the user request, the ordered tool calls,
-and exactly where the user corrected or Claude retried. That signal lives in
-the `turn` records scan.py writes; this module reconstructs a compact,
-ordered view of them.
+and exactly where the user pivoted the plan or Claude repeated a tool. That
+signal lives in the `turn` records scan.py writes; this module reconstructs a
+compact, ordered view of them.
 
 Pure Python. No LLM.
 """

@@ -41,7 +41,7 @@ Trích hành vi → LLM-judge phân cụm pattern → chuẩn hoá thành **Skil
 | --------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `tool_use.name`                   | Tool/MCP gọi (đã thấy `mcp__computer-use__left_click` x14, `screenshot` x11…)                      |
 | `tool_use.input`                  | **Tham số** — quan trọng để khám phá template (URL hay nhập, query hay search, file path hay đọc…) |
-| `tool_result.content`             | Kết quả — biết action nào fail/retry                                                               |
+| `tool_result.content`             | Kết quả — biết action nào fail/lặp lại (repeat)                                                    |
 | `tools_changed`, `tool_reference` | User bật/tắt MCP, search tool nào                                                                  |
 | Slash command trong prompt        | Skill đã “đóng gói” mà user dùng (vd `/review`, `/standup`)                                        |
 
@@ -104,7 +104,7 @@ TurnRecord
  ├─ user_text  (nếu user)
  ├─ thinking_summary (rút gọn từ thinking)
  ├─ actions: [ActionRecord]
- └─ feedback_flag: {correction|confirm|retry|none}
+ └─ feedback_flag: {pivot|repeat|none}   (cấu trúc, không keyword)
 
 ActionRecord
  ├─ tool_name, mcp_server
@@ -136,4 +136,4 @@ Output Skill chuẩn hoá nên gồm: `name`, `trigger` (intent regex / slash co
 
 ---
 
-**Tóm gọn:** ưu tiên 3 cụm field — *(intent: `initialMessage` + `title` + user prompts)*, *(action: `tool_use.name` + `tool_use.input` + `parent_tool_use_id`)*, *(feedback: correction/retry/confirm phát hiện qua heuristic giữa các turn)*. Ba cụm này đủ để LLM-judge phát hiện pattern lặp, xác định bước thừa, và đề xuất Skill rõ trigger + steps + preset cá nhân.
+**Tóm gọn:** ưu tiên 3 cụm field — *(intent: `initialMessage` + `title` + user prompts)*, *(action: `tool_use.name` + `tool_use.input` + `parent_tool_use_id`)*, *(feedback: pivot/repeat phát hiện qua CẤU TRÚC turn — `repeat` = chạy lại cùng tool trong cửa sổ, `pivot` = user bẻ hướng tool — không dựa keyword nên độc lập ngôn ngữ)*. Ba cụm này đủ để LLM-judge phát hiện pattern lặp, xác định bước thừa, và đề xuất Skill rõ trigger + steps + preset cá nhân.

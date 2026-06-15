@@ -6,7 +6,6 @@ recurring action patterns. See docs/data_goal.md for the field rationale.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 from dataclasses import asdict, dataclass, field
@@ -31,18 +30,16 @@ TARGET_DATE: str | None = None
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_ROOT = PROJECT_ROOT / "data"
 
-# ── Heuristics for feedback signals ───────────────────────────────────────────
+# ── Structural feedback signals ───────────────────────────────────────────────
+#
+# Feedback is derived from turn/action *structure*, not phrase lists, so it
+# holds across languages: `repeat` = same tool re-run in a later turn within
+# the window; `pivot` = a user turn that changed the assistant's tool direction.
 
-CORRECTION_PATTERNS = (
-    "không phải", "không đúng", "sai rồi", "làm lại", "thử lại",
-    "đừng ", "khoan", "bỏ qua", "hủy", "huỷ",
-    "actually no", "no wait", "redo", "stop ",
-)
-CONFIRM_PATTERNS = (
-    "ok", "okay", "yes", "đúng", "đúng rồi", "tiếp tục",
-    "tiếp đi", "chính xác", "tốt", "ngon", "perfect", "good",
-)
-RETRY_WINDOW_SECONDS = 60
+REPEAT_WINDOW_SECONDS = 60
+# Jaccard distance between the assistant toolset before vs. after a user turn,
+# above which the user turn is treated as having pivoted the plan.
+PIVOT_CHURN_THRESHOLD = 0.5
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -67,7 +64,7 @@ class TurnRecord:
     thinking_summary: str | None = None
     text_summary: str | None = None
     actions: list[ActionRecord] = field(default_factory=list)
-    feedback_flag: str | None = None  # "correction" | "confirm" | "retry"
+    feedback_flag: str | None = None  # "pivot" | "repeat"
     input_tokens: int = 0
     output_tokens: int = 0
 
@@ -94,9 +91,8 @@ class SessionSummary:
     tool_usage: dict[str, int]
     tool_sequence: list[str]
     mcp_usage: dict[str, int]
-    correction_count: int
-    confirm_count: int
-    retry_count: int
+    pivot_count: int
+    repeat_count: int
     rate_limit_hits: int
     outputs_produced: int
 
@@ -141,7 +137,7 @@ def compress_runs(seq: list[str]) -> list[str]:
     """Collapse consecutive duplicate tool names: [A,A,B] -> [A×2, B].
 
     Preserves order; keeps the flow readable for the LLM judge while marking
-    repetition (e.g. a tight retry loop shows up as `click×6`)."""
+    repetition (e.g. a tight repeat loop shows up as `click×6`)."""
     out: list[str] = []
     for name in seq:
         if out and out[-1].split("×")[0] == name:
@@ -177,11 +173,6 @@ def trim_input(payload: Any, max_str: int = 300) -> Any:
     return payload
 
 
-def hash_input(payload: Any) -> str:
-    blob = json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False)
-    return hashlib.md5(blob.encode("utf-8")).hexdigest()[:12]
-
-
 def extract_user_text(content: Any) -> str | None:
     if isinstance(content, str):
         return content
@@ -195,18 +186,41 @@ def extract_user_text(content: Any) -> str | None:
     return None
 
 
-def detect_feedback(text: str | None) -> str | None:
-    if not text:
-        return None
-    t = text.lower().strip()
-    for p in CORRECTION_PATTERNS:
-        if p in t:
-            return "correction"
-    if len(t) <= 40:
-        for p in CONFIRM_PATTERNS:
-            if t == p or any(t.startswith(p + sep) for sep in (" ", ",", "!", ".", "?")):
-                return "confirm"
-    return None
+# ── Structural feedback signals ───────────────────────────────────────────────
+
+
+def _assistant_tools(turn: TurnRecord) -> set[str]:
+    return {a.tool_name for a in turn.actions}
+
+
+def mark_pivot_turns(
+    turns: list[TurnRecord], threshold: float = PIVOT_CHURN_THRESHOLD
+) -> None:
+    """Flag user turns that pivoted the assistant's tool direction.
+
+    A user turn is a `pivot` when the toolset the assistant used *after* it
+    diverges from the toolset *before* it (Jaccard distance >= threshold). Both
+    sides must be non-empty, so an opening instruction (no prior flow) or a
+    closing remark (no following actions) never counts. Purely structural — no
+    vocabulary, so it is language-agnostic. Mutates `turns` in place."""
+    for i, turn in enumerate(turns):
+        if turn.role != "user" or turn.feedback_flag is not None:
+            continue
+        before: set[str] = set()
+        for prev in reversed(turns[:i]):
+            if prev.role == "user":
+                break
+            before |= _assistant_tools(prev)
+        after: set[str] = set()
+        for nxt in turns[i + 1:]:
+            if nxt.role == "user":
+                break
+            after |= _assistant_tools(nxt)
+        if not before or not after:
+            continue
+        distance = 1.0 - len(before & after) / len(before | after)
+        if distance >= threshold:
+            turn.feedback_flag = "pivot"
 
 
 # ── Session parsing ───────────────────────────────────────────────────────────
@@ -237,7 +251,7 @@ def parse_session(
     tool_sequence: list[str] = []
     mcp_usage: dict[str, int] = {}
     actions_by_tool_use_id: dict[str, ActionRecord] = {}
-    last_tool_seen: dict[tuple[str, str], datetime] = {}
+    last_tool_seen: dict[str, tuple[datetime, int]] = {}
     seen_uuids: set[str] = set()
     turn_idx = 0
 
@@ -298,7 +312,6 @@ def parse_session(
                 ts=ts,
                 role="user",
                 user_text=truncate(text, 4000) if text else None,
-                feedback_flag=detect_feedback(text),
             ))
             continue
 
@@ -333,15 +346,21 @@ def parse_session(
                     tool_sequence.append(name)
                     mcp_usage[mcp] = mcp_usage.get(mcp, 0) + 1
                     trimmed = trim_input(block.get("input"))
-                    ihash = hash_input(trimmed)
+                    # Repeat = the same tool name re-run in a *later* turn within
+                    # the window. Cross-turn only: several Edits in one turn is
+                    # normal batching, not a redo. Language-free, no input hash.
                     dt = iso_to_dt(ts)
-                    key = (name, ihash)
-                    prev = last_tool_seen.get(key)
-                    if dt and prev and (dt - prev).total_seconds() <= RETRY_WINDOW_SECONDS:
-                        if t.feedback_flag is None:
-                            t.feedback_flag = "retry"
+                    prev = last_tool_seen.get(name)
+                    if dt and prev:
+                        prev_dt, prev_idx = prev
+                        if (
+                            prev_idx < turn_idx
+                            and (dt - prev_dt).total_seconds() <= REPEAT_WINDOW_SECONDS
+                            and t.feedback_flag is None
+                        ):
+                            t.feedback_flag = "repeat"
                     if dt:
-                        last_tool_seen[key] = dt
+                        last_tool_seen[name] = (dt, turn_idx)
                     a = ActionRecord(
                         tool_use_id=block.get("id"),
                         tool_name=name,
@@ -358,6 +377,9 @@ def parse_session(
                 t.text_summary = truncate("\n".join(texts), 800)
             turns.append(t)
             continue
+
+    # Structural feedback: mark user turns that pivoted the tool direction.
+    mark_pivot_turns(turns)
 
     # Outcome — count produced output files
     outputs_folder = audit_path.parent / "outputs"
@@ -393,9 +415,8 @@ def parse_session(
         tool_usage=dict(sorted(tool_usage.items(), key=lambda kv: -kv[1])),
         tool_sequence=compress_runs(tool_sequence),
         mcp_usage=dict(sorted(mcp_usage.items(), key=lambda kv: -kv[1])),
-        correction_count=sum(1 for t in turns if t.feedback_flag == "correction"),
-        confirm_count=sum(1 for t in turns if t.feedback_flag == "confirm"),
-        retry_count=sum(1 for t in turns if t.feedback_flag == "retry"),
+        pivot_count=sum(1 for t in turns if t.feedback_flag == "pivot"),
+        repeat_count=sum(1 for t in turns if t.feedback_flag == "repeat"),
         rate_limit_hits=len(rate_limits),
         outputs_produced=outputs_produced,
     )

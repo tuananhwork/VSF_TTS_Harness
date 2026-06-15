@@ -51,7 +51,7 @@ _PATTERN_REPORT_TMPL = _env.from_string("""\
 
 {% for cl in clusters %}
 ### Cluster {{ loop.index }} ({{ cl.behavior_class_hint }})
-- recurrence: {{ cl.recurrence }}, retry_rate: {{ cl.retry_rate }}, correction_rate: {{ cl.correction_rate }}
+- recurrence: {{ cl.recurrence }}, repeat_rate: {{ cl.repeat_rate }}, pivot_rate: {{ cl.pivot_rate }}
 - representative tools: `{{ cl.representative_tools | join(", ") }}`
 - tool_sequence: {% for seq in cl.tool_sequence_per_session %}`{{ seq | join(" → ") }}`{% if not loop.last %} | {% endif %}{% endfor %}
 

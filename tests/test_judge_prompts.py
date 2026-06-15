@@ -17,7 +17,8 @@ def _group() -> dict:
         "source_files": ["a.jsonl", "b.jsonl"],
         "intent_seeds": ["Tóm tắt file", "đọc và tóm tắt file"],
         "tool_sequence_per_session": [["Read", "Edit×2"], ["Read", "Edit"]],
-        "retry_rate": 0.0,
+        "repeat_rate": 0.0,
+        "pivot_rate": 0.0,
         "behavior_class_hint": "process",
     }
 
@@ -52,7 +53,7 @@ def _traces() -> dict:
         "sid-a": [
             {"role": "user", "text": "Tóm tắt file", "feedback": None},
             {"role": "assistant", "tools": ["Read", "Edit×2"], "feedback": None},
-            {"role": "user", "text": "sai rồi", "feedback": "correction"},
+            {"role": "user", "text": "sai rồi", "feedback": "pivot"},
         ],
     }
 
@@ -60,7 +61,7 @@ def _traces() -> dict:
 def test_extract_prompt_requests_factual_fields_only() -> None:
     prompt = build_extract_prompt(_candidate(), _traces())
     assert "summarize_file" in prompt
-    assert "correction" in prompt           # trace markers surfaced
+    assert "pivot" in prompt                 # trace markers surfaced
     assert "action_template" in prompt       # ordered flow requested
     assert "weak_points" in prompt
     assert "improvement_notes" in prompt

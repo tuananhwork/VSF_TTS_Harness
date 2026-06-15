@@ -6,8 +6,11 @@ loại sạch.
 
 > Vì sao phải có playbook: ba ràng buộc trong code quyết định log "dùng được" hay không —
 > recurrence guard ≥2 session (`scripts/_lib/candidate_schema.py:44`), phân loại 2 skill_type
-> (`README.md:57`), và heuristic feedback tiếng Việt (`scripts/scan.py:34`). Checklist này
-> ép log chạm đủ cả ba.
+> (`README.md:57`), và tín hiệu feedback **cấu trúc** (`scripts/scan.py`, không còn keyword).
+> Checklist này ép log chạm đủ cả ba.
+>
+> ⚠️ Khác bản cũ: feedback giờ suy ra từ **hành vi**, không từ câu chữ. Không cần "nói đúng
+> cụm từ" nữa — muốn có tín hiệu thì phải tạo ra **hành vi** tương ứng (xem mục B).
 
 ---
 
@@ -43,23 +46,27 @@ Chọn 3–4 task đại diện cho việc bạn muốn pipeline học. Gợi ý
 
 - [ ] Mở chat mới, đặt tiêu đề đúng theo bảng.
 - [ ] Mô tả task gọn, đủ ngữ cảnh ngay từ prompt đầu.
-- [ ] Để Claude làm liền mạch; **xác nhận bằng đúng cụm** heuristic confirm bắt được:
-      `ok`, `đúng rồi`, `tiếp tục`, `chính xác`, `ngon` (xem `scripts/scan.py:39`).
+- [ ] Để Claude làm **liền mạch một hướng** — đừng bắt nó đổi tool giữa chừng (giữ `pivot_rate`
+      thấp). Lời lẽ xác nhận nói sao cũng được; không còn dò keyword.
 - [ ] Đảm bảo có **file thật ra `outputs/`** (đếm vào `outputs_produced`).
 - [ ] Lần 2: lặp lại với input biến tấu nhẹ.
 
 ### B. Messy run — để test nhánh `improvement_lesson` (chạy ≥ 1 lần)
 
-- [ ] Mở chat mới, cùng tiêu đề task.
-- [ ] **Cố tình để Claude hiểu sai** rồi đính chính bằng đúng cụm correction heuristic bắt:
-      `không phải`, `không đúng`, `sai rồi`, `làm lại`, `khoan`, `bỏ qua`, `hủy`
-      (xem `scripts/scan.py:34`).
-- [ ] Tạo ít nhất một **retry**: yêu cầu lặp lại cùng thao tác/tool trong vòng 60s
-      (heuristic retry bắt theo cùng tool + cùng input ≤ 60s, `scripts/scan.py:43`).
-- [ ] Mục tiêu: session này có `correction_count > 0` và/hoặc `retry_count > 0`.
+Tín hiệu giờ là **cấu trúc**, nên phải tạo ra HÀNH VI, không phải câu chữ:
 
-> Đây là cách DUY NHẤT để test nhánh correction-heavy. Log toàn "clean" sẽ không bao giờ
-> kích hoạt `improvement_lesson`.
+- [ ] Mở chat mới, cùng tiêu đề task.
+- [ ] Tạo **pivot**: để Claude bắt đầu làm theo một hướng tool (vd đang `Read`/`Grep`), rồi
+      chen yêu cầu khiến nó **chuyển sang bộ tool khác hẳn** (vd `WebSearch`/`Edit`). Pivot bắt
+      khi tập tool *trước* và *sau* lượt user của bạn lệch nhau ≥ 0.5 (Jaccard) — nói bằng ngôn
+      ngữ nào cũng được, miễn HƯỚNG TOOL đổi.
+- [ ] Tạo **repeat**: khiến Claude **chạy lại cùng một tool** ở lượt sau trong vòng 60s (vd
+      lệnh fail rồi nó chạy lại, hoặc bạn yêu cầu thử lại đúng thao tác đó).
+- [ ] Mục tiêu: session này có `pivot_count > 0` và/hoặc `repeat_count > 0`.
+
+> Đây là cách DUY NHẤT để test nhánh ma-sát-cao. Log toàn "clean một hướng" sẽ không bao giờ
+> kích hoạt `improvement_lesson`. Lưu ý: chỉ "nói sai rồi làm lại" mà KHÔNG đổi hướng tool thì
+> **không** tính pivot nữa — đó chính là điểm khác so với bản keyword cũ.
 
 ---
 
@@ -71,8 +78,9 @@ Chọn 3–4 task đại diện cho việc bạn muốn pipeline học. Gợi ý
       ```
 - [ ] Mở `data/sessions_<date>_runAt_<ts>/_index.json` → kiểm tra `matched` ≥ số session đã chạy.
 - [ ] Mở vài file `*.jsonl`, xác nhận trên record `session_summary`:
-      `correction_count` / `confirm_count` / `retry_count` / `outputs_produced` đúng như chủ đích.
-      Nếu = 0 hết ⇒ heuristic chưa bắt được, sửa lại cách phát ngôn rồi chạy lại Cowork.
+      `pivot_count` / `repeat_count` / `outputs_produced` đúng như chủ đích.
+      Nếu = 0 hết ⇒ hành vi chưa tạo đủ tín hiệu (chưa đổi hướng tool / chưa lặp tool), điều
+      chỉnh KỊCH BẢN THAO TÁC rồi chạy lại Cowork — không phải sửa câu chữ.
 - [ ] Chạy judge:
       ```bash
       uv run python scripts/judge.py --sessions-dir data/sessions_<date>_runAt_<ts> --min-recurrence 2

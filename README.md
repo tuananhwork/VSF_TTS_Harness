@@ -60,7 +60,7 @@ Output: `data/judge_<date>/{cluster_summary.json, pattern_report.md, candidate_s
 
 Hai loại skill sinh ra:
 - **process_macro**: đóng gói flow tốt hay lặp lại để gọi lại nhanh.
-- **improvement_lesson**: bài học từ session lắm retry/correction — "lần sau làm X
+- **improvement_lesson**: bài học từ session lắm repeat/pivot — "lần sau làm X
   trước để tránh Y".
 
 ### 3) Synth — sinh skill draft + proposal
