@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import queue
 import sys
+import time
+import threading
 from pathlib import Path
 
-import customtkinter as ctk
+import flet as ft
 
 _GUI = Path(__file__).resolve().parent
 if str(_GUI) not in sys.path:
@@ -16,101 +18,111 @@ from screen_configure import ConfigureScreen
 from screen_running import RunningScreen
 from screen_review import ReviewScreen
 
-ctk.set_appearance_mode("system")
-ctk.set_default_color_theme("blue")
 
-_POLL_MS = 50
+def main(page: ft.Page) -> None:
+    page.title = "Pattern"
+    page.window.width = 560
+    page.window.height = 660
+    page.window.min_width = 480
+    page.window.min_height = 560
+    page.theme_mode = ft.ThemeMode.SYSTEM
+    page.padding = 0
 
+    _q: queue.Queue = queue.Queue()
+    _runner: list[PipelineRunner | None] = [None]
 
-class PatternApp(ctk.CTk):
-    def __init__(self):
-        super().__init__()
-        self.title("Pattern")
-        self.geometry("500x560")
-        self.resizable(False, False)
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+    # Use a dict so inner functions can reference screens before they're created.
+    # Functions capture the dict by reference; screens are populated below.
+    _s: dict = {}
 
-        self._q: queue.Queue = queue.Queue()
-        self._runner: PipelineRunner | None = None
+    # ── Navigation ───────────────────────────────────────────────────────────
 
-        self._configure = ConfigureScreen(self, on_run=self._start_pipeline)
-        self._running = RunningScreen(self, on_cancel=self._cancel_pipeline)
-        self._review = ReviewScreen(self, on_back=self._show_configure)
+    def _show_configure() -> None:
+        page.controls.clear()
+        page.controls.append(_s["configure"].container)
+        page.update()
 
-        self._show_configure()
+    def _show_running() -> None:
+        page.controls.clear()
+        page.controls.append(_s["running"].container)
+        page.update()
 
-    def _show_configure(self) -> None:
-        self._running.grid_remove()
-        self._review.grid_remove()
-        self._configure.grid(row=0, column=0, sticky="nsew")
+    def _show_review(proposals: list[SkillProposal]) -> None:
+        _s["review"].load_proposals(proposals)
+        page.controls.clear()
+        page.controls.append(_s["review"].container)
+        page.update()
 
-    def _show_running(self) -> None:
-        self._configure.grid_remove()
-        self._review.grid_remove()
-        self._running.grid(row=0, column=0, sticky="nsew")
+    # ── Pipeline control ─────────────────────────────────────────────────────
 
-    def _show_review(self, proposals: list[SkillProposal]) -> None:
-        self._running.grid_remove()
-        self._configure.grid_remove()
-        self._review.load_proposals(proposals)
-        self._review.grid(row=0, column=0, sticky="nsew")
-
-    def _start_pipeline(self, date: str, source: str,
-                        min_recurrence: int, max_deepdive: int) -> None:
+    def _start_pipeline(
+        date: str, source: str, min_recurrence: int, max_deepdive: int
+    ) -> None:
+        nonlocal _q
+        _q = queue.Queue()
         params = PipelineParams(
             date=date,
             source=source,
             min_recurrence=min_recurrence,
             max_deepdive=max_deepdive,
         )
-        self._running.reset()
-        self._show_running()
-        self._runner = PipelineRunner(params, self._q)
-        self._runner.start()
-        self.after(_POLL_MS, self._poll_queue)
+        _s["running"].reset()
+        _show_running()
+        _runner[0] = PipelineRunner(params, _q)
+        _runner[0].start()
+        threading.Thread(target=_poll_queue, daemon=True).start()
 
-    def _cancel_pipeline(self) -> None:
-        if self._runner:
-            self._runner.cancel()
-        self._show_configure()
+    def _cancel_pipeline() -> None:
+        if _runner[0]:
+            _runner[0].cancel()
+        _show_configure()
 
-    def _poll_queue(self) -> None:
+    # ── Queue polling (background thread) ────────────────────────────────────
+
+    def _poll_queue() -> None:
+        while _runner[0] and _runner[0].is_alive():
+            _drain()
+            time.sleep(0.05)
+        _drain()  # final drain after thread ends
+
+    def _drain() -> None:
+        changed = False
         try:
             while True:
-                msg = self._q.get_nowait()
-                self._handle_msg(msg)
+                msg = _q.get_nowait()
+                _handle(msg)
+                changed = True
         except queue.Empty:
             pass
+        if changed:
+            page.update()
 
-        if self._runner and self._runner.is_alive():
-            self.after(_POLL_MS, self._poll_queue)
-
-    def _handle_msg(self, msg: tuple) -> None:
+    def _handle(msg: tuple) -> None:
         kind = msg[0]
-
         if kind == "log":
-            self._running.append_log(msg[1])
+            _s["running"].append_log(msg[1])
         elif kind == "step_start":
-            self._running.update_step("running", msg[1])
+            _s["running"].update_step("running", msg[1])
         elif kind == "step_done":
-            self._running.update_step("done", msg[1])
+            _s["running"].update_step("done", msg[1])
         elif kind == "step_error":
-            step, err = msg[1], msg[2]
-            self._running.update_step("error", step)
-            self._running.append_error(err)
+            _s["running"].update_step("error", msg[1])
+            _s["running"].append_error(msg[2])
         elif kind == "no_sessions":
-            self._running.append_log("Không có session nào cho ngày này. Thử ngày khác.")
+            _s["running"].append_log("Không có session nào cho ngày này. Thử ngày khác.")
         elif kind == "no_candidates":
-            self._running.append_log("Chưa phát hiện pattern đủ mạnh. Thử quét nhiều ngày hơn.")
+            _s["running"].append_log("Chưa phát hiện pattern đủ mạnh. Thử quét nhiều ngày hơn.")
         elif kind == "done":
-            self._show_review(msg[1])
+            _show_review(msg[1])
 
+    # ── Create screens (functions are already defined above) ─────────────────
 
-def main() -> None:
-    app = PatternApp()
-    app.mainloop()
+    _s["configure"] = ConfigureScreen(page, on_run=_start_pipeline)
+    _s["running"] = RunningScreen(page, on_cancel=_cancel_pipeline)
+    _s["review"] = ReviewScreen(page, on_back=_show_configure)
+
+    _show_configure()
 
 
 if __name__ == "__main__":
-    main()
+    ft.run(main)

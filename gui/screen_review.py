@@ -1,109 +1,178 @@
 """Màn hình 3 — Review & Accept: chọn skill để cài."""
 from __future__ import annotations
 
-import sys
-import tkinter.messagebox as mb
-from pathlib import Path
 from typing import Callable
 
-import customtkinter as ctk
-
-if str(Path(__file__).parent) not in sys.path:
-    sys.path.insert(0, str(Path(__file__).parent))
+import flet as ft
 
 from pipeline_runner import SkillProposal, install_skill
 
-_CONFIDENCE_COLOR = {
-    "cao": "green",
-    "trung bình": "orange",
-    "thấp": "gray",
+_CONF = {
+    "cao":        {"bg": "#2E7D32", "label": "Cao"},
+    "trung bình": {"bg": "#E65100", "label": "TB"},
+    "thấp":       {"bg": "#616161", "label": "Thấp"},
+}
+_ACCENT = {
+    "cao":        "#4CAF50",
+    "trung bình": "#FF8A65",
+    "thấp":       "#9E9E9E",
 }
 
 
-class ReviewScreen(ctk.CTkFrame):
-    def __init__(self, master, on_back: Callable[[], None], **kwargs):
-        super().__init__(master, **kwargs)
+class ReviewScreen:
+    def __init__(self, page: ft.Page, on_back: Callable) -> None:
+        self._page = page
         self._on_back = on_back
         self._proposals: list[SkillProposal] = []
-        self._checkboxes: list[ctk.BooleanVar] = []
+        self._checkboxes: list[ft.Checkbox] = []
         self._build()
 
     def _build(self) -> None:
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self._header_lbl = ft.Text("", size=18, weight=ft.FontWeight.BOLD)
 
-        self._header = ctk.CTkLabel(self, text="",
-                                     font=ctk.CTkFont(size=16, weight="bold"))
-        self._header.grid(row=0, column=0, pady=(24, 8), padx=24, sticky="w")
+        self._select_all = ft.Checkbox(
+            label="Chọn tất cả",
+            value=True,
+            on_change=self._on_select_all,
+        )
 
-        self._scroll = ctk.CTkScrollableFrame(self)
-        self._scroll.grid(row=1, column=0, padx=24, sticky="nsew")
-        self._scroll.grid_columnconfigure(0, weight=1)
+        self._card_list = ft.ListView(expand=True, spacing=8)
 
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.grid(row=2, column=0, padx=24, pady=16, sticky="ew")
-        btn_frame.grid_columnconfigure(1, weight=1)
-        ctk.CTkButton(btn_frame, text="← Quay lại", width=100,
-                      fg_color="gray40", command=self._on_back).grid(row=0, column=0, sticky="w")
-        ctk.CTkButton(btn_frame, text="Cài skill đã chọn", height=36,
-                      command=self._install_selected).grid(row=0, column=2, sticky="e")
+        btn_row = ft.Row([
+            ft.OutlinedButton("← Quay lại", on_click=lambda e: self._on_back()),
+            ft.Container(expand=True),
+            ft.FilledButton(
+                "Cài các skill đã chọn",
+                on_click=self._install_selected,
+            ),
+        ])
+
+        self.container = ft.Container(
+            content=ft.Column([
+                self._header_lbl,
+                ft.Text("Chọn skill muốn cài vào Claude:", size=12, color="#757575"),
+                ft.Container(height=4),
+                self._select_all,
+                ft.Divider(height=1, color="#E0E0E0"),
+                ft.Container(height=4),
+                self._card_list,
+                ft.Container(height=8),
+                btn_row,
+            ], expand=True, spacing=4),
+            padding=ft.Padding(left=28, right=28, top=24, bottom=24),
+            expand=True,
+        )
+
+    # ── Public API ───────────────────────────────────────────────────────────
 
     def load_proposals(self, proposals: list[SkillProposal]) -> None:
         self._proposals = proposals
         self._checkboxes = []
+        self._card_list.controls.clear()
+        self._select_all.value = True
 
-        for w in self._scroll.winfo_children():
-            w.destroy()
-
-        self._header.configure(text=f"Phát hiện {len(proposals)} skill. Chọn để cài:")
-
-        for i, p in enumerate(proposals):
-            var = ctk.BooleanVar(value=True)
-            self._checkboxes.append(var)
-            self._build_card(i, p, var)
-
-    def _build_card(self, idx: int, p: SkillProposal, var: ctk.BooleanVar) -> None:
-        card = ctk.CTkFrame(self._scroll, border_width=1)
-        card.grid(row=idx, column=0, pady=4, sticky="ew")
-        card.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkCheckBox(card, text="", variable=var, width=24).grid(
-            row=0, column=0, rowspan=2, padx=(12, 0), pady=8
-        )
-        ctk.CTkLabel(card, text=p.name,
-                     font=ctk.CTkFont(weight="bold")).grid(
-            row=0, column=1, padx=8, pady=(8, 0), sticky="w"
+        n = len(proposals)
+        self._header_lbl.value = (
+            f"Phát hiện {n} pattern mới" if n != 1 else "Phát hiện 1 pattern mới"
         )
 
-        desc = p.description[:80] + "..." if len(p.description) > 80 else p.description
-        ctk.CTkLabel(card, text=desc,
-                     text_color=("gray40", "gray60")).grid(
-            row=1, column=1, padx=8, sticky="w"
+        for p in proposals:
+            cb = ft.Checkbox(value=True)
+            self._checkboxes.append(cb)
+            self._card_list.controls.append(self._build_card(p, cb))
+
+    # ── Card builder ─────────────────────────────────────────────────────────
+
+    def _build_card(self, p: SkillProposal, cb: ft.Checkbox) -> ft.Control:
+        conf_style = _CONF.get(p.confidence, _CONF["thấp"])
+        accent = _ACCENT.get(p.confidence, "#9E9E9E")
+
+        badge = ft.Container(
+            content=ft.Text(
+                conf_style["label"],
+                size=10,
+                weight=ft.FontWeight.BOLD,
+                color="white",
+            ),
+            bgcolor=conf_style["bg"],
+            border_radius=4,
+            padding=ft.Padding(left=7, right=7, top=3, bottom=3),
         )
 
-        meta = f"Lặp {p.recurrence} lần  •  Độ tin cậy: {p.confidence}"
+        meta_items: list[ft.Control] = [
+            ft.Text(f"Lặp {p.recurrence} lần", size=11, color="#9E9E9E"),
+            badge,
+        ]
         if p.has_quality_issues:
-            meta += "  ⚠"
-        ctk.CTkLabel(card, text=meta,
-                     text_color=_CONFIDENCE_COLOR.get(p.confidence, "gray"),
-                     font=ctk.CTkFont(size=11)).grid(
-            row=2, column=1, padx=8, pady=(0, 8), sticky="w"
+            meta_items.append(ft.Text("⚠ Cần review", size=10, color="#E65100"))
+
+        desc = p.description[:90] + "…" if len(p.description) > 90 else p.description
+
+        return ft.Container(
+            content=ft.Row([
+                # Left accent strip
+                ft.Container(
+                    width=4,
+                    bgcolor=accent,
+                    border_radius=ft.BorderRadius(top_left=8, top_right=0, bottom_left=8, bottom_right=0),
+                ),
+                # Checkbox
+                ft.Container(content=cb, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
+                # Text content
+                ft.Column([
+                    ft.Text(p.name, size=13, weight=ft.FontWeight.BOLD),
+                    ft.Text(desc, size=11, color="#757575", max_lines=2),
+                    ft.Row(meta_items, spacing=6),
+                ], expand=True, spacing=4),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+            border=ft.Border(top=ft.BorderSide(1,"#E0E0E0"), right=ft.BorderSide(1,"#E0E0E0"), bottom=ft.BorderSide(1,"#E0E0E0"), left=ft.BorderSide(1,"#E0E0E0")),
+            border_radius=8,
+            padding=ft.Padding(left=0, right=14, top=10, bottom=10),
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
 
-    def _install_selected(self) -> None:
-        installed = []
-        for proposal, var in zip(self._proposals, self._checkboxes):
-            if var.get():
+    # ── Callbacks ────────────────────────────────────────────────────────────
+
+    def _on_select_all(self, e) -> None:
+        for cb in self._checkboxes:
+            cb.value = e.control.value
+        self._page.update()
+
+    def _install_selected(self, e) -> None:
+        installed, failed = [], []
+        for proposal, cb in zip(self._proposals, self._checkboxes):
+            if cb.value:
                 try:
                     install_skill(proposal)
                     installed.append(proposal.name)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    failed.append(f"{proposal.name} ({exc})")
 
-        msg = (
-            f"Đã cài {len(installed)} skill: {', '.join(installed)}.\n"
-            "Có hiệu lực phiên Claude tiếp theo."
-            if installed
-            else "Không có skill nào được chọn."
+        if installed:
+            msg = f"Đã cài {len(installed)} skill:\n• " + "\n• ".join(installed)
+            if failed:
+                msg += f"\n\nLỗi ({len(failed)}):\n• " + "\n• ".join(failed)
+            msg += "\n\nCó hiệu lực từ phiên Claude tiếp theo."
+        elif failed:
+            msg = "Không cài được skill nào.\n" + "\n".join(failed)
+        else:
+            msg = "Không có skill nào được chọn."
+
+        self._show_dialog("Pattern — Hoàn tất", msg)
+
+    def _show_dialog(self, title: str, content: str) -> None:
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(title),
+            content=ft.Text(content),
         )
-        mb.showinfo("Pattern", msg)
+
+        def close(e):
+            dlg.open = False
+            self._page.overlay.remove(dlg)
+            self._page.update()
+
+        dlg.actions = [ft.TextButton("OK", on_click=close)]
+        self._page.overlay.append(dlg)
+        dlg.open = True
+        self._page.update()
