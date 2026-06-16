@@ -33,7 +33,7 @@ from _lib.candidate_schema import (  # noqa: E402
     normalize_skill_type,
     split_accepted,
 )
-from _lib.claude_runner import ClaudeRunError, run_claude_json  # noqa: E402
+from _lib.claude_runner import ClaudeRunError, provider_label, run_claude_json  # noqa: E402
 from _lib.debate import run_debate  # noqa: E402
 from _lib.judge_prompts import (  # noqa: E402
     JUDGES,
@@ -106,7 +106,7 @@ def main(
         installed = _list_installed_skills(installed_skills_dir)
 
         # ── PASS 1: triage on summaries ──────────────────────────────────────
-        click.echo(f"[judge] triage: `ccs one -p` (timeout={timeout}s)")
+        click.echo(f"[judge] triage: `{provider_label()}` (timeout={timeout}s)")
         triage_prompt = build_triage_prompt(cluster_dicts, installed)
         triage = run_claude_json(triage_prompt, timeout=timeout)
         (out_dir / "_raw_triage.txt").write_text(

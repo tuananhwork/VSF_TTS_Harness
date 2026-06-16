@@ -72,8 +72,21 @@ def _provider() -> str:
     )
 
 
+def provider_label() -> str:
+    """Human-readable label for the active provider command (no prompt).
+
+    Returns ``claude -p`` or ``ccs <profile> -p``, reflecting the real
+    ``LLM_PROVIDER``/``CCS_PROFILE`` so log lines don't hardcode ``ccs one -p``.
+    Never raises (uses a placeholder when the profile is unset) — it's only a label.
+    """
+    if _provider() == PROVIDER_CLAUDE:
+        return "claude -p"
+    profile = os.environ.get("CCS_PROFILE", "").strip() or "<profile>"
+    return f"ccs {profile} -p"
+
+
 class ClaudeRunError(RuntimeError):
-    """Raised when `ccs one -p` exits non-zero or output cannot be parsed."""
+    """Raised when the provider command exits non-zero or output cannot be parsed."""
 
 
 _FENCED_RE = re.compile(r"```(?:json)?\s*(.+?)```", re.DOTALL)
@@ -216,9 +229,10 @@ def run_claude(prompt: str, *, timeout: float = 180.0) -> str:
         label = "claude -p"
         missing_bin, missing_name = CLAUDE_BIN, "claude"
     else:
-        cmd = _ccs_command() + [_ccs_profile(), "-p", prompt]
+        profile = _ccs_profile()
+        cmd = _ccs_command() + [profile, "-p", prompt]
         env = _subprocess_env()
-        label = "ccs one -p"
+        label = f"ccs {profile} -p"
         missing_bin, missing_name = CCS_BIN, "ccs"
     try:
         result = subprocess.run(
