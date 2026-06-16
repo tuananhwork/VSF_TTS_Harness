@@ -33,7 +33,7 @@ class Session:
     duration_seconds: float | None
     tool_usage: dict[str, int]
     repeat_count: int
-    pivot_count: int
+    failure_count: int
     tool_sequence: list[str] = field(default_factory=list)
     source_file: str = ""
 
@@ -71,7 +71,7 @@ def load_sessions(sessions_dir: Path) -> list[Session]:
             duration_seconds=rec.get("duration_seconds"),
             tool_usage=dict(rec.get("tool_usage") or {}),
             repeat_count=int(rec.get("repeat_count") or 0),
-            pivot_count=int(rec.get("pivot_count") or 0),
+            failure_count=int(rec.get("failure_count") or 0),
             tool_sequence=list(rec.get("tool_sequence") or []),
             source_file=jsonl_path.name,
         ))
@@ -142,7 +142,7 @@ class Cluster:
     representative_titles: list[str]
     recurrence: int
     repeat_rate: float
-    pivot_rate: float
+    failure_rate: float
     avg_duration_seconds: float
     total_tokens: int
     behavior_class_hint: str  # "process" | "inefficient" | "unclear"
@@ -156,7 +156,7 @@ class Cluster:
             "representative_titles": self.representative_titles,
             "recurrence": self.recurrence,
             "repeat_rate": round(self.repeat_rate, 3),
-            "pivot_rate": round(self.pivot_rate, 3),
+            "failure_rate": round(self.failure_rate, 3),
             "avg_duration_seconds": round(self.avg_duration_seconds, 1),
             "total_tokens": self.total_tokens,
             "behavior_class_hint": self.behavior_class_hint,
@@ -187,14 +187,14 @@ def cluster_metrics(group: list[Session]) -> dict:
         sum(s.repeat_count / s.total_actions for s in group if s.total_actions)
         / max(1, sum(1 for s in group if s.total_actions))
     )
-    pivot_rate = (
-        sum(s.pivot_count / s.total_user_turns for s in group if s.total_user_turns)
-        / max(1, sum(1 for s in group if s.total_user_turns))
+    failure_rate = (
+        sum(s.failure_count / s.total_actions for s in group if s.total_actions)
+        / max(1, sum(1 for s in group if s.total_actions))
     )
     return {
         "recurrence": n,
         "repeat_rate": repeat_rate,
-        "pivot_rate": pivot_rate,
+        "failure_rate": failure_rate,
         "behavior_class": classify_behavior(repeat_rate, n),
     }
 
@@ -214,7 +214,7 @@ def _build_cluster(group: list[Session]) -> Cluster:
         representative_titles=[s.title for s in group if s.title],
         recurrence=n,
         repeat_rate=m["repeat_rate"],
-        pivot_rate=m["pivot_rate"],
+        failure_rate=m["failure_rate"],
         avg_duration_seconds=avg_duration,
         total_tokens=total_tokens,
         behavior_class_hint=m["behavior_class"],
@@ -238,7 +238,7 @@ def recompute_candidate_metrics(
         if resolved:
             m = cluster_metrics(resolved)
         else:
-            m = {"recurrence": 0, "repeat_rate": 0.0, "pivot_rate": 0.0,
+            m = {"recurrence": 0, "repeat_rate": 0.0, "failure_rate": 0.0,
                  "behavior_class": "unclear"}
         m["unknown_session_ids"] = unknown
         c["metrics"] = m

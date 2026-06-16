@@ -1,7 +1,8 @@
-"""Tests for scan.py structural feedback signals (repeat + pivot).
+"""Tests for scan.py structural feedback signals (rework + failure).
 
-These replace the old keyword-based correction/confirm detection: the signals
-are now derived from turn/action structure, not Vietnamese phrase lists.
+`repeat` now means *rework after a failure* (retrying a tool that just errored),
+not raw tool reuse — clean autonomous loops (screenshot×N, TaskCreate×N) must NOT
+count. `failure_count` counts actions whose tool_result was an error.
 """
 
 from __future__ import annotations
@@ -27,12 +28,20 @@ def _assistant_event(uuid: str, ts: str, tool_names: list[str]) -> dict:
     }
 
 
-def _user_event(uuid: str, ts: str, text: str) -> dict:
+def _tool_result_event(uuid: str, tool_use_id: str, *, is_error: bool) -> dict:
     return {
         "type": "user",
         "uuid": uuid,
-        "timestamp": ts,
-        "message": {"content": [{"type": "text", "text": text}]},
+        "message": {
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "is_error": is_error,
+                    "content": [{"type": "text", "text": "boom" if is_error else "ok"}],
+                }
+            ]
+        },
     }
 
 
@@ -50,85 +59,64 @@ def _parse(tmp_path: Path, events: list[dict]):
     return scan.parse_session(meta, audit, "ws1")
 
 
-# ── repeat ────────────────────────────────────────────────────────────────────
+# ── failure_count ─────────────────────────────────────────────────────────────
 
 
-def test_repeat_flags_same_tool_in_later_turn_within_window(tmp_path: Path) -> None:
+def test_failure_count_counts_errored_actions(tmp_path: Path) -> None:
+    summary, _turns, _ = _parse(tmp_path, [
+        _assistant_event("a1", "2026-06-15T10:00:00", ["bash", "Read"]),
+        _tool_result_event("r1", "a1-0", is_error=True),    # bash failed
+        _tool_result_event("r2", "a1-1", is_error=False),   # Read ok
+    ])
+    assert summary.failure_count == 1
+
+
+def test_failure_count_zero_when_all_ok(tmp_path: Path) -> None:
+    summary, _turns, _ = _parse(tmp_path, [
+        _assistant_event("a1", "2026-06-15T10:00:00", ["bash"]),
+        _tool_result_event("r1", "a1-0", is_error=False),
+    ])
+    assert summary.failure_count == 0
+
+
+# ── repeat = rework after failure ─────────────────────────────────────────────
+
+
+def test_repeat_flags_retry_after_failure(tmp_path: Path) -> None:
     summary, turns, _ = _parse(tmp_path, [
-        _assistant_event("a1", "2026-06-15T10:00:00", ["Bash"]),
-        _assistant_event("a2", "2026-06-15T10:00:10", ["Bash"]),
+        _assistant_event("a1", "2026-06-15T10:00:00", ["bash"]),
+        _tool_result_event("r1", "a1-0", is_error=True),     # bash failed
+        _assistant_event("a2", "2026-06-15T10:00:10", ["bash"]),  # retry → rework
     ])
     assert summary.repeat_count == 1
     assert [t.feedback_flag for t in turns] == [None, "repeat"]
 
 
-def test_repeat_not_flagged_outside_window(tmp_path: Path) -> None:
+def test_clean_repeat_is_not_rework(tmp_path: Path) -> None:
+    # The over-fire fix: re-running a tool that SUCCEEDED is normal, not rework.
     summary, _turns, _ = _parse(tmp_path, [
-        _assistant_event("a1", "2026-06-15T10:00:00", ["Bash"]),
-        _assistant_event("a2", "2026-06-15T10:02:00", ["Bash"]),  # 120s later
+        _assistant_event("a1", "2026-06-15T10:00:00", ["TaskCreate"]),
+        _tool_result_event("r1", "a1-0", is_error=False),
+        _assistant_event("a2", "2026-06-15T10:00:05", ["TaskCreate"]),
+        _assistant_event("a3", "2026-06-15T10:00:08", ["TaskCreate"]),
     ])
     assert summary.repeat_count == 0
 
 
-def test_repeat_ignores_intra_turn_duplicate_tools(tmp_path: Path) -> None:
-    # A single turn editing several files is normal batching, not a redo.
+def test_rework_not_flagged_outside_window(tmp_path: Path) -> None:
     summary, _turns, _ = _parse(tmp_path, [
-        _assistant_event("a1", "2026-06-15T10:00:00", ["Edit", "Edit", "Edit"]),
+        _assistant_event("a1", "2026-06-15T10:00:00", ["bash"]),
+        _tool_result_event("r1", "a1-0", is_error=True),
+        _assistant_event("a2", "2026-06-15T10:02:00", ["bash"]),  # 120s later
     ])
     assert summary.repeat_count == 0
 
 
-# ── pivot ─────────────────────────────────────────────────────────────────────
-
-
-def test_pivot_flags_user_turn_that_changes_tool_direction(tmp_path: Path) -> None:
-    # Assistant was reading; user speaks; assistant switches to a totally
-    # different toolset → the plan pivoted.
-    summary, turns, _ = _parse(tmp_path, [
-        _assistant_event("a1", "2026-06-15T10:00:00", ["Read", "Grep"]),
-        _user_event("u1", "2026-06-15T10:00:05", "đổi hướng giúp mình"),
-        _assistant_event("a2", "2026-06-15T10:00:10", ["WebSearch", "WebFetch"]),
-    ])
-    assert summary.pivot_count == 1
-    user_turn = next(t for t in turns if t.role == "user")
-    assert user_turn.feedback_flag == "pivot"
-
-
-def test_no_pivot_when_assistant_continues_same_tools(tmp_path: Path) -> None:
-    summary, turns, _ = _parse(tmp_path, [
-        _assistant_event("a1", "2026-06-15T10:00:00", ["Read"]),
-        _user_event("u1", "2026-06-15T10:00:05", "ok tiếp tục"),
+def test_rework_requires_same_tool(tmp_path: Path) -> None:
+    # bash failed, but the next turn uses a different tool → not rework.
+    summary, _turns, _ = _parse(tmp_path, [
+        _assistant_event("a1", "2026-06-15T10:00:00", ["bash"]),
+        _tool_result_event("r1", "a1-0", is_error=True),
         _assistant_event("a2", "2026-06-15T10:00:10", ["Read"]),
     ])
-    assert summary.pivot_count == 0
-    user_turn = next(t for t in turns if t.role == "user")
-    assert user_turn.feedback_flag is None
-
-
-def test_no_pivot_when_no_actions_follow_user_turn(tmp_path: Path) -> None:
-    summary, _turns, _ = _parse(tmp_path, [
-        _assistant_event("a1", "2026-06-15T10:00:00", ["Read"]),
-        _user_event("u1", "2026-06-15T10:00:05", "cảm ơn nhé"),
-    ])
-    assert summary.pivot_count == 0
-
-
-def test_no_pivot_for_opening_user_instruction(tmp_path: Path) -> None:
-    # First user turn has no prior assistant flow to pivot from.
-    summary, _turns, _ = _parse(tmp_path, [
-        _user_event("u1", "2026-06-15T10:00:00", "tạo slide sản phẩm X"),
-        _assistant_event("a1", "2026-06-15T10:00:10", ["Read", "Edit"]),
-    ])
-    assert summary.pivot_count == 0
-
-
-def test_correction_keyword_alone_does_not_flag_pivot(tmp_path: Path) -> None:
-    # The whole point of the refactor: a correction phrase with no change in
-    # tool direction must NOT be counted. Keywords no longer drive the signal.
-    summary, turns, _ = _parse(tmp_path, [
-        _assistant_event("a1", "2026-06-15T10:00:00", ["Read"]),
-        _user_event("u1", "2026-06-15T10:00:05", "không phải, sai rồi, làm lại"),
-        _assistant_event("a2", "2026-06-15T10:00:10", ["Read"]),
-    ])
-    assert summary.pivot_count == 0
-    assert all(t.feedback_flag != "correction" for t in turns)
+    assert summary.repeat_count == 0

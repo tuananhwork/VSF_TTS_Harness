@@ -21,7 +21,7 @@ def _mk_session(
         session_id=sid, process_name=sid, title=title, intent_seed=intent_seed,
         total_actions=sum(tools.values()), total_user_turns=0,
         total_input_tokens=0, total_output_tokens=0, duration_seconds=0.0,
-        tool_usage=tools, repeat_count=0, pivot_count=0,
+        tool_usage=tools, repeat_count=0, failure_count=0,
         tool_sequence=tool_sequence or [],
     )
 
@@ -95,13 +95,13 @@ def test_aggregate_metrics_classify_inefficient() -> None:
         session_id="h", process_name="h", title="Computer test", intent_seed=None,
         total_actions=14, total_user_turns=5, total_input_tokens=0,
         total_output_tokens=0, duration_seconds=10.0,
-        tool_usage={"click": 14}, repeat_count=13, pivot_count=0,
+        tool_usage={"click": 14}, repeat_count=13, failure_count=0,
     )
     other = Session(
         session_id="h2", process_name="h2", title="Computer test", intent_seed=None,
         total_actions=10, total_user_turns=5, total_input_tokens=0,
         total_output_tokens=0, duration_seconds=10.0,
-        tool_usage={"click": 10}, repeat_count=8, pivot_count=0,
+        tool_usage={"click": 10}, repeat_count=8, failure_count=0,
     )
     clusters = aggregate([high_retry, other])
     assert len(clusters) == 1
@@ -134,27 +134,27 @@ def test_cluster_metrics_computes_rates_and_behavior() -> None:
         session_id="a", process_name="a", title="x", intent_seed=None,
         total_actions=10, total_user_turns=4, total_input_tokens=0,
         total_output_tokens=0, duration_seconds=0.0,
-        tool_usage={"click": 10}, repeat_count=3, pivot_count=1,
+        tool_usage={"click": 10}, repeat_count=3, failure_count=1,
     )
     b = Session(
         session_id="b", process_name="b", title="x", intent_seed=None,
         total_actions=10, total_user_turns=4, total_input_tokens=0,
         total_output_tokens=0, duration_seconds=0.0,
-        tool_usage={"click": 10}, repeat_count=3, pivot_count=1,
+        tool_usage={"click": 10}, repeat_count=3, failure_count=1,
     )
     m = cluster_metrics([a, b])
     assert m["recurrence"] == 2
     assert m["repeat_rate"] == 0.3        # mean(3/10, 3/10)
-    assert m["pivot_rate"] == 0.25        # mean(1/4, 1/4)
+    assert m["failure_rate"] == 0.1       # mean(1/10, 1/10)
     assert m["behavior_class"] == "inefficient"   # repeat_rate >= 0.2
 
 
-def _sess(sid: str, repeat: int, pivot: int) -> Session:
+def _sess(sid: str, repeat: int, failure: int) -> Session:
     return Session(
         session_id=sid, process_name=sid, title="x", intent_seed=None,
         total_actions=10, total_user_turns=4, total_input_tokens=0,
         total_output_tokens=0, duration_seconds=0.0,
-        tool_usage={"click": 10}, repeat_count=repeat, pivot_count=pivot,
+        tool_usage={"click": 10}, repeat_count=repeat, failure_count=failure,
     )
 
 

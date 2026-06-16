@@ -25,21 +25,21 @@ SOURCE_LOG_ROOT = Path(
 
 # YYYY-MM-DD. Leave None to use today's date.
 # A session is included if its [createdAt, lastActivityAt] window touches this date.
-TARGET_DATE: str | None = None
+# TARGET_DATE: str | None = None
+TARGET_DATE = "2026-06-15"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_ROOT = PROJECT_ROOT / "data"
 
 # ── Structural feedback signals ───────────────────────────────────────────────
 #
-# Feedback is derived from turn/action *structure*, not phrase lists, so it
-# holds across languages: `repeat` = same tool re-run in a later turn within
-# the window; `pivot` = a user turn that changed the assistant's tool direction.
+# Feedback is derived from turn/action *structure* + tool outcomes, not phrase
+# lists, so it holds across languages:
+#   - `repeat` (rework) = retrying a tool that just FAILED (within the window).
+#     Clean autonomous loops (screenshot×N) succeed, so they don't count.
+#   - `failure_count` = actions whose tool_result was an error (result_ok False).
 
-REPEAT_WINDOW_SECONDS = 60
-# Jaccard distance between the assistant toolset before vs. after a user turn,
-# above which the user turn is treated as having pivoted the plan.
-PIVOT_CHURN_THRESHOLD = 0.5
+REWORK_WINDOW_SECONDS = 60
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -64,7 +64,7 @@ class TurnRecord:
     thinking_summary: str | None = None
     text_summary: str | None = None
     actions: list[ActionRecord] = field(default_factory=list)
-    feedback_flag: str | None = None  # "pivot" | "repeat"
+    feedback_flag: str | None = None  # "repeat" (rework after a failure)
     input_tokens: int = 0
     output_tokens: int = 0
 
@@ -91,7 +91,7 @@ class SessionSummary:
     tool_usage: dict[str, int]
     tool_sequence: list[str]
     mcp_usage: dict[str, int]
-    pivot_count: int
+    failure_count: int
     repeat_count: int
     rate_limit_hits: int
     outputs_produced: int
@@ -189,38 +189,36 @@ def extract_user_text(content: Any) -> str | None:
 # ── Structural feedback signals ───────────────────────────────────────────────
 
 
-def _assistant_tools(turn: TurnRecord) -> set[str]:
-    return {a.tool_name for a in turn.actions}
-
-
-def mark_pivot_turns(
-    turns: list[TurnRecord], threshold: float = PIVOT_CHURN_THRESHOLD
+def mark_rework_turns(
+    turns: list[TurnRecord], window_seconds: float = REWORK_WINDOW_SECONDS
 ) -> None:
-    """Flag user turns that pivoted the assistant's tool direction.
+    """Flag assistant turns that re-run a tool which recently FAILED — genuine
+    rework, not normal repetition.
 
-    A user turn is a `pivot` when the toolset the assistant used *after* it
-    diverges from the toolset *before* it (Jaccard distance >= threshold). Both
-    sides must be non-empty, so an opening instruction (no prior flow) or a
-    closing remark (no following actions) never counts. Purely structural — no
-    vocabulary, so it is language-agnostic. Mutates `turns` in place."""
-    for i, turn in enumerate(turns):
-        if turn.role != "user" or turn.feedback_flag is not None:
+    A turn is `repeat` when it uses a tool whose prior run (in an earlier turn,
+    within the window) returned an error (result_ok is False). Clean autonomous
+    loops — screenshot×N, TaskCreate×N — succeed every time, so they never count.
+    Needs `result_ok` populated, so it runs as a post-pass. Mutates in place."""
+    recent_fail: dict[str, datetime] = {}
+    for turn in turns:
+        if turn.role != "assistant":
             continue
-        before: set[str] = set()
-        for prev in reversed(turns[:i]):
-            if prev.role == "user":
-                break
-            before |= _assistant_tools(prev)
-        after: set[str] = set()
-        for nxt in turns[i + 1:]:
-            if nxt.role == "user":
-                break
-            after |= _assistant_tools(nxt)
-        if not before or not after:
-            continue
-        distance = 1.0 - len(before & after) / len(before | after)
-        if distance >= threshold:
-            turn.feedback_flag = "pivot"
+        dt = iso_to_dt(turn.ts)
+        if dt:
+            for a in turn.actions:
+                prev = recent_fail.get(a.tool_name)
+                if (
+                    prev is not None
+                    and (dt - prev).total_seconds() <= window_seconds
+                    and turn.feedback_flag is None
+                ):
+                    turn.feedback_flag = "repeat"
+                    break
+        # Record this turn's failures so a *later* turn can be flagged as rework.
+        if dt:
+            for a in turn.actions:
+                if a.result_ok is False:
+                    recent_fail[a.tool_name] = dt
 
 
 # ── Session parsing ───────────────────────────────────────────────────────────
@@ -251,7 +249,6 @@ def parse_session(
     tool_sequence: list[str] = []
     mcp_usage: dict[str, int] = {}
     actions_by_tool_use_id: dict[str, ActionRecord] = {}
-    last_tool_seen: dict[str, tuple[datetime, int]] = {}
     seen_uuids: set[str] = set()
     turn_idx = 0
 
@@ -346,21 +343,6 @@ def parse_session(
                     tool_sequence.append(name)
                     mcp_usage[mcp] = mcp_usage.get(mcp, 0) + 1
                     trimmed = trim_input(block.get("input"))
-                    # Repeat = the same tool name re-run in a *later* turn within
-                    # the window. Cross-turn only: several Edits in one turn is
-                    # normal batching, not a redo. Language-free, no input hash.
-                    dt = iso_to_dt(ts)
-                    prev = last_tool_seen.get(name)
-                    if dt and prev:
-                        prev_dt, prev_idx = prev
-                        if (
-                            prev_idx < turn_idx
-                            and (dt - prev_dt).total_seconds() <= REPEAT_WINDOW_SECONDS
-                            and t.feedback_flag is None
-                        ):
-                            t.feedback_flag = "repeat"
-                    if dt:
-                        last_tool_seen[name] = (dt, turn_idx)
                     a = ActionRecord(
                         tool_use_id=block.get("id"),
                         tool_name=name,
@@ -378,8 +360,8 @@ def parse_session(
             turns.append(t)
             continue
 
-    # Structural feedback: mark user turns that pivoted the tool direction.
-    mark_pivot_turns(turns)
+    # Structural feedback: flag assistant turns that reworked a failed tool.
+    mark_rework_turns(turns)
 
     # Outcome — count produced output files
     outputs_folder = audit_path.parent / "outputs"
@@ -415,7 +397,9 @@ def parse_session(
         tool_usage=dict(sorted(tool_usage.items(), key=lambda kv: -kv[1])),
         tool_sequence=compress_runs(tool_sequence),
         mcp_usage=dict(sorted(mcp_usage.items(), key=lambda kv: -kv[1])),
-        pivot_count=sum(1 for t in turns if t.feedback_flag == "pivot"),
+        failure_count=sum(
+            1 for t in turns for a in t.actions if a.result_ok is False
+        ),
         repeat_count=sum(1 for t in turns if t.feedback_flag == "repeat"),
         rate_limit_hits=len(rate_limits),
         outputs_produced=outputs_produced,
