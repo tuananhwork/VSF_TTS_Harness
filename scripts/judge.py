@@ -45,8 +45,14 @@ from _lib.render_proposal import render_pattern_report  # noqa: E402
 from _lib.trace_loader import load_traces  # noqa: E402
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_ROOT = PROJECT_ROOT / "data"
+def _get_data_root() -> Path:
+    import sys as _sys
+    if getattr(_sys, "frozen", False):
+        return Path(_sys.executable).parent / "pattern_data"
+    return Path(__file__).resolve().parent.parent / "data"
+
+
+DATA_ROOT = _get_data_root()
 
 
 def _list_installed_skills(skills_dir: Path) -> list[str]:
@@ -55,110 +61,80 @@ def _list_installed_skills(skills_dir: Path) -> list[str]:
     return sorted(p.name for p in skills_dir.iterdir() if p.is_dir())
 
 
-@click.command()
-@click.option(
-    "--sessions-dir",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    required=True,
-    help="Directory of session JSONL produced by scan.py",
-)
-@click.option(
-    "--installed-skills-dir",
-    type=click.Path(file_okay=False, path_type=Path),
-    default=Path.home() / ".claude" / "skills",
-    show_default=True,
-)
-@click.option("--top-candidates", type=int, default=5, show_default=True)
-@click.option("--min-recurrence", type=int, default=2, show_default=True,
-              help="Reject candidates whose evidence spans fewer sessions.")
-@click.option("--max-deepdive", type=int, default=5, show_default=True,
-              help="Cap how many triaged candidates get a deep-dive LLM call.")
-@click.option("--timeout", type=float, default=300.0, show_default=True)
-def main(
+def run_judge(
     sessions_dir: Path,
-    installed_skills_dir: Path,
-    top_candidates: int,
-    min_recurrence: int,
-    max_deepdive: int,
-    timeout: float,
-) -> None:
+    min_recurrence: int = 2,
+    max_deepdive: int = 5,
+    top_candidates: int = 5,
+    timeout: float = 300.0,
+    installed_skills_dir: Path | None = None,
+    log_fn=print,
+) -> Path:
+    """Chạy judge pipeline. Trả về Path tới candidate_skills.json."""
+    if installed_skills_dir is None:
+        installed_skills_dir = Path.home() / ".claude" / "skills"
+
     today = _date.today().isoformat()
     out_dir = DATA_ROOT / f"judge_{today}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    click.echo(f"[judge] loading sessions from {sessions_dir}")
+    log_fn(f"[judge] loading sessions from {sessions_dir}")
     sessions = load_sessions(sessions_dir)
-    click.echo(f"[judge] loaded {len(sessions)} sessions")
+    log_fn(f"[judge] loaded {len(sessions)} sessions")
 
     clusters = aggregate(sessions)
     cluster_dicts = [c.to_dict() for c in clusters]
     (out_dir / "cluster_summary.json").write_text(
-        json.dumps(cluster_dicts, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+        json.dumps(cluster_dicts, ensure_ascii=False, indent=2), encoding="utf-8",
     )
-    click.echo(f"[judge] {len(clusters)} tool-usage group(s)")
+    log_fn(f"[judge] {len(clusters)} tool-usage group(s)")
 
     if not clusters:
-        click.echo("[judge] no sessions → skipping LLM judge")
+        log_fn("[judge] no sessions → skipping LLM judge")
         final: list[dict] = []
         accepted: list[dict] = []
     else:
         installed = _list_installed_skills(installed_skills_dir)
 
-        # ── PASS 1: triage on summaries ──────────────────────────────────────
-        click.echo(f"[judge] triage: `{provider_label()}` (timeout={timeout}s)")
+        log_fn(f"[judge] triage: `{provider_label()}` (timeout={timeout}s)")
         triage_prompt = build_triage_prompt(cluster_dicts, installed)
         triage = run_claude_json(triage_prompt, timeout=timeout)
         (out_dir / "_raw_triage.txt").write_text(
             json.dumps(triage, ensure_ascii=False, indent=2), encoding="utf-8")
         triage = [normalize_skill_name(normalize_skill_type(c)) for c in triage]
-
-        # ── RECOMPUTE: metric thật trên evidence đã merge (không phải tool-group)
         triage = recompute_candidate_metrics(triage, sessions)
-
-        # ── GUARD: code-level recurrence check (dùng metrics.recurrence đã verify)
         triage = apply_recurrence_guard(triage, min_recurrence=min_recurrence)
         accepted_triage, rejected = split_accepted(triage)
-        click.echo(
-            f"[judge] triage: {len(accepted_triage)} pass, {len(rejected)} rejected"
-        )
+        log_fn(f"[judge] triage: {len(accepted_triage)} pass, {len(rejected)} rejected")
         accepted_triage = accepted_triage[:max_deepdive]
 
-        # ── PASS 2 (debate): extract → judges → consolidate ──────────
-        # Each sub-step can fail without tanking the candidate: extract/consolidator
-        # errors are recorded as fields; a failed judge is recorded as a verdict
-        # with an `error` key (see _lib/debate.py). The triage candidate always
-        # survives (it still carries trigger_intent + evidence).
         enriched: list[dict] = []
         for c in accepted_triage:
             src = c.get("evidence", {}).get("source_files", [])
             traces = load_traces(src, sessions_dir)
-            click.echo(f"[judge] debate: {c['name']} ({len(traces)} traces, {len(JUDGES)} judges)")
+            log_fn(f"[judge] debate: {c['name']} ({len(traces)} traces, {len(JUDGES)} judges)")
 
-            # EXTRACT — neutral facts from the trace.
             try:
                 facts = run_claude_json(build_extract_prompt(c, traces), timeout=timeout)
                 (out_dir / f"_raw_extract_{c['name']}.txt").write_text(
                     json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")
             except (ClaudeRunError, ValueError, json.JSONDecodeError) as e:
-                click.echo(f"[judge]   ! extract failed ({e})")
+                log_fn(f"[judge]   ! extract failed ({e})")
                 facts = {"extract_error": str(e)}
 
-            # DEBATE — N judges in parallel, each argues its own axis.
             verdicts = run_debate(
                 c, facts, traces, judges=JUDGES, runner=run_claude_json, timeout=timeout
             )
             (out_dir / f"_raw_debate_{c['name']}.txt").write_text(
                 json.dumps(verdicts, ensure_ascii=False, indent=2), encoding="utf-8")
 
-            # CONSOLIDATE — one verdict reconciling the judges.
             try:
                 verdict = run_claude_json(
                     build_consolidator_prompt(c, facts, verdicts), timeout=timeout)
                 (out_dir / f"_raw_consolidate_{c['name']}.txt").write_text(
                     json.dumps(verdict, ensure_ascii=False, indent=2), encoding="utf-8")
             except (ClaudeRunError, ValueError, json.JSONDecodeError) as e:
-                click.echo(f"[judge]   ! consolidator failed ({e}); keeping candidate")
+                log_fn(f"[judge]   ! consolidator failed ({e}); keeping candidate")
                 verdict = {"consolidator_error": str(e)}
 
             enriched.append({**c, **facts, "debate": verdicts, **verdict})
@@ -172,9 +148,9 @@ def main(
         rejected += [c for c in enriched if c.get("rejected_reason")]
         final = accepted + rejected
 
-    (out_dir / "candidate_skills.json").write_text(
-        json.dumps(final, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    candidates_path = out_dir / "candidate_skills.json"
+    candidates_path.write_text(
+        json.dumps(final, ensure_ascii=False, indent=2), encoding="utf-8",
     )
 
     report_md = render_pattern_report(
@@ -185,10 +161,32 @@ def main(
         candidates=final,
     )
     (out_dir / "pattern_report.md").write_text(report_md, encoding="utf-8")
+    log_fn(f"[judge] done. {len(accepted)} accepted, {len(final) - len(accepted)} rejected → {out_dir}")
+    return candidates_path
 
-    click.echo(
-        f"[judge] done. {len(accepted)} accepted, "
-        f"{len(final) - len(accepted)} rejected → {out_dir}"
+
+@click.command()
+@click.option("--sessions-dir", type=click.Path(exists=True, file_okay=False, path_type=Path), required=True)
+@click.option("--installed-skills-dir", type=click.Path(file_okay=False, path_type=Path), default=Path.home() / ".claude" / "skills")
+@click.option("--top-candidates", type=int, default=5)
+@click.option("--min-recurrence", type=int, default=2)
+@click.option("--max-deepdive", type=int, default=5)
+@click.option("--timeout", type=float, default=300.0)
+def main(
+    sessions_dir: Path,
+    installed_skills_dir: Path,
+    top_candidates: int,
+    min_recurrence: int,
+    max_deepdive: int,
+    timeout: float,
+) -> None:
+    run_judge(
+        sessions_dir=sessions_dir,
+        min_recurrence=min_recurrence,
+        max_deepdive=max_deepdive,
+        top_candidates=top_candidates,
+        timeout=timeout,
+        installed_skills_dir=installed_skills_dir,
     )
 
 

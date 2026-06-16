@@ -78,7 +78,16 @@ def _detect_log_root(source: str = SOURCE_COWORK) -> Path:
 TARGET_DATE = "2026-06-15"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_ROOT = PROJECT_ROOT / "data"
+
+
+def _get_data_root() -> Path:
+    """Trả về data dir phù hợp với cả dev mode và frozen .exe."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent / "pattern_data"
+    return Path(__file__).resolve().parent.parent / "data"
+
+
+DATA_ROOT = _get_data_root()
 
 # ── Structural feedback signals ───────────────────────────────────────────────
 #
@@ -685,20 +694,14 @@ def _iter_parsed(
             yield (*parse_session(meta_path, audit_path, ws_id), True)
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Scan Claude session logs -> per-session JSONL.")
-    parser.add_argument(
-        "--source", choices=[SOURCE_COWORK, SOURCE_CLAUDE_CODE], default=SOURCE_COWORK,
-        help="Log source: claude-cowork (Desktop audit.jsonl, default) or claude-code (~/.claude/projects).",
-    )
-    parser.add_argument(
-        "--target-date", default=None, metavar="SPEC",
-        help='Override TARGET_DATE: "" (today), "ALL", "YYYY-MM-DD", or comma-separated dates.',
-    )
-    args = parser.parse_args(argv)
-
-    root = _detect_log_root(args.source)
-    targets = parse_target_dates(args.target_date)
+def run_scan(
+    source: str = SOURCE_COWORK,
+    target_date: str | None = None,
+    log_fn=print,
+) -> Path:
+    """Scan sessions và write JSONL ra out_dir. Trả về out_dir path."""
+    root = _detect_log_root(source)
+    targets = parse_target_dates(target_date)
     label = target_label(targets)
     run_ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = DATA_ROOT / f"sessions_{label}_runAt_{run_ts}"
@@ -706,7 +709,7 @@ def main(argv: list[str] | None = None) -> int:
 
     index: list[dict[str, Any]] = []
     scanned = matched = 0
-    for summary, turns, rate_limits, ok in _iter_parsed(args.source, root, targets):
+    for summary, turns, rate_limits, ok in _iter_parsed(source, root, targets):
         scanned += 1
         if not ok:
             continue
@@ -722,11 +725,11 @@ def main(argv: list[str] | None = None) -> int:
             "total_actions": summary.total_actions,
             "file": out_path.name,
         })
-        print(f"  + {summary.process_name or summary.session_id} -> {out_path.name}")
+        log_fn(f"  + {summary.process_name or summary.session_id} -> {out_path.name}")
 
     (out_dir / "_index.json").write_text(
         json.dumps({
-            "source": args.source,
+            "source": source,
             "target_date": label,
             "run_at": run_ts,
             "source_root": str(root),
@@ -737,7 +740,22 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
 
-    print(f"\nDone. {matched}/{scanned} {args.source} sessions matched {label} -> {out_dir}")
+    log_fn(f"\nDone. {matched}/{scanned} {source} sessions matched {label} -> {out_dir}")
+    return out_dir
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Scan Claude session logs -> per-session JSONL.")
+    parser.add_argument(
+        "--source", choices=[SOURCE_COWORK, SOURCE_CLAUDE_CODE], default=SOURCE_COWORK,
+        help="Log source: claude-cowork (Desktop audit.jsonl, default) or claude-code (~/.claude/projects).",
+    )
+    parser.add_argument(
+        "--target-date", default=None, metavar="SPEC",
+        help='Override TARGET_DATE: "" (today), "ALL", "YYYY-MM-DD", or comma-separated dates.',
+    )
+    args = parser.parse_args(argv)
+    run_scan(source=args.source, target_date=args.target_date)
     return 0
 
 

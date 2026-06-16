@@ -33,8 +33,14 @@ from _lib.skill_assemble import assemble_skill  # noqa: E402
 from _lib.skill_validate import validate_skill  # noqa: E402
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_ROOT = PROJECT_ROOT / "data"
+def _get_data_root() -> Path:
+    import sys as _sys
+    if getattr(_sys, "frozen", False):
+        return Path(_sys.executable).parent / "pattern_data"
+    return Path(__file__).resolve().parent.parent / "data"
+
+
+DATA_ROOT = _get_data_root()
 SCRIPTS_DIR = Path(__file__).resolve().parent
 
 
@@ -125,15 +131,13 @@ def _synthesize_one(
     return {**candidate, "synth_problems": problems}
 
 
-@click.command()
-@click.option(
-    "--candidates", "candidates_path",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    required=True,
-)
-@click.option("--top", type=int, default=3, show_default=True)
-@click.option("--timeout", type=float, default=120.0, show_default=True)
-def main(candidates_path: Path, top: int, timeout: float) -> None:
+def run_synth(
+    candidates_path: Path,
+    top: int = 3,
+    timeout: float = 120.0,
+    log_fn=print,
+) -> tuple[list[dict], Path]:
+    """Synthesize top-N candidates. Trả về (results, out_dir)."""
     today = _date.today().isoformat()
     out_dir = DATA_ROOT / f"skills_{today}_proposal"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -142,26 +146,24 @@ def main(candidates_path: Path, top: int, timeout: float) -> None:
     accepted = [c for c in all_candidates if not c.get("rejected_reason")]
     top_n = [normalize_skill_name(c) for c in accepted[:top]]
     batch_names = [c["name"] for c in top_n]
-    click.echo(f"[synth] {len(top_n)} candidates to synthesize")
+    log_fn(f"[synth] {len(top_n)} candidates to synthesize")
 
     now = datetime.now()
     results: list[dict] = []
     for c in top_n:
-        click.echo(f"[synth] -> {c['name']}")
+        log_fn(f"[synth] -> {c['name']}")
         results.append(_synthesize_one(c, batch_names, out_dir, timeout, now))
 
-    # Save sidecar meta and emit accept.py
     (out_dir / "_proposal_meta.json").write_text(
         json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8",
     )
     _emit_accept_py(out_dir, [c["name"] for c in results])
 
-    # Render PROPOSAL.md + a deterministic quality-gate section.
     from _lib.render_proposal import render_pattern_report
     proposal_md = render_pattern_report(
         date=today,
         date_range=str(candidates_path.parent.name),
-        sessions_scanned=0,  # not tracked in synth, see judge step's report
+        sessions_scanned=0,
         clusters=[],
         candidates=results,
     )
@@ -172,7 +174,16 @@ def main(candidates_path: Path, top: int, timeout: float) -> None:
     ]
     proposal_md += "\n## Synth quality gate\n\n" + "\n".join(gate_lines) + "\n"
     (out_dir / "PROPOSAL.md").write_text(proposal_md, encoding="utf-8")
-    click.echo(f"[synth] done -> {out_dir}")
+    log_fn(f"[synth] done -> {out_dir}")
+    return results, out_dir
+
+
+@click.command()
+@click.option("--candidates", "candidates_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), required=True)
+@click.option("--top", type=int, default=3, show_default=True)
+@click.option("--timeout", type=float, default=120.0, show_default=True)
+def main(candidates_path: Path, top: int, timeout: float) -> None:
+    run_synth(candidates_path=candidates_path, top=top, timeout=timeout)
 
 
 if __name__ == "__main__":
