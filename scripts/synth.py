@@ -26,8 +26,10 @@ import click
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from datetime import datetime  # noqa: E402
+from functools import partial  # noqa: E402
 
 from _lib.candidate_schema import normalize_skill_name  # noqa: E402
+from _lib.claude_runner import CancelToken, run_claude_json  # noqa: E402
 from _lib.skill_render import render_skill  # noqa: E402
 from _lib.skill_assemble import assemble_skill  # noqa: E402
 from _lib.skill_validate import validate_skill  # noqa: E402
@@ -117,11 +119,11 @@ if __name__ == "__main__":
 
 def _synthesize_one(
     candidate: dict, batch_names: list[str], out_dir: Path, timeout: float,
-    now: datetime,
+    now: datetime, runner=run_claude_json,
 ) -> dict:
     """Render (LLM) → assemble (code) → validate (code). Returns candidate plus
     the quality-gate result under `synth_problems`."""
-    rendered = render_skill(candidate, batch_names, timeout=timeout)
+    rendered = render_skill(candidate, batch_names, timeout=timeout, runner=runner)
     skill_dir = assemble_skill(
         candidate=candidate, rendered=rendered, output_dir=out_dir, now=now,
     )
@@ -136,8 +138,13 @@ def run_synth(
     top: int = 3,
     timeout: float = 120.0,
     log_fn=print,
+    cancel: CancelToken | None = None,
 ) -> tuple[list[dict], Path]:
-    """Synthesize top-N candidates. Trả về (results, out_dir)."""
+    """Synthesize top-N candidates. Trả về (results, out_dir).
+
+    `cancel` (CancelToken) huỷ thật: call render LLM đi qua runner đã bind token.
+    """
+    runner = partial(run_claude_json, cancel=cancel)
     today = _date.today().isoformat()
     out_dir = DATA_ROOT / f"skills_{today}_proposal"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -151,8 +158,10 @@ def run_synth(
     now = datetime.now()
     results: list[dict] = []
     for c in top_n:
+        if cancel is not None:
+            cancel.raise_if_cancelled()
         log_fn(f"[synth] -> {c['name']}")
-        results.append(_synthesize_one(c, batch_names, out_dir, timeout, now))
+        results.append(_synthesize_one(c, batch_names, out_dir, timeout, now, runner))
 
     (out_dir / "_proposal_meta.json").write_text(
         json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8",

@@ -19,6 +19,7 @@ for _p in [_HERE, _HERE.parent / "scripts"]:
 import scan as _scan
 import judge as _judge
 import synth as _synth
+from _lib.claude_runner import CancelToken, ClaudeRunCancelled
 
 
 @dataclass
@@ -82,10 +83,12 @@ class PipelineRunner(threading.Thread):
         super().__init__(daemon=True)
         self._params = params
         self._q = q
-        self._cancelled = threading.Event()
+        self._cancel = CancelToken()
 
     def cancel(self) -> None:
-        self._cancelled.set()
+        # Set the flag AND kill any in-flight `claude -p`/`ccs` subprocess so the
+        # LLM call stops immediately instead of running to completion.
+        self._cancel.cancel()
 
     def _log(self, msg: str) -> None:
         self._q.put(("log", msg))
@@ -114,7 +117,7 @@ class PipelineRunner(threading.Thread):
                 return
 
         self._q.put(("step_done", "scan"))
-        if self._cancelled.is_set():
+        if self._cancel.cancelled:
             return
 
         # ── Judge ────────────────────────────────────────────────
@@ -127,13 +130,16 @@ class PipelineRunner(threading.Thread):
                 top_candidates=p.top_candidates,
                 timeout=p.timeout,
                 log_fn=self._log,
+                cancel=self._cancel,
             )
+        except ClaudeRunCancelled:
+            return  # user huỷ — call LLM đã bị kill, thoát yên lặng
         except Exception as e:
             self._q.put(("step_error", "judge", str(e)))
             return
 
         self._q.put(("step_done", "judge"))
-        if self._cancelled.is_set():
+        if self._cancel.cancelled:
             return
 
         # ── Synth ────────────────────────────────────────────────
@@ -144,7 +150,10 @@ class PipelineRunner(threading.Thread):
                 top=p.top_candidates,
                 timeout=p.timeout,
                 log_fn=self._log,
+                cancel=self._cancel,
             )
+        except ClaudeRunCancelled:
+            return  # user huỷ — thoát yên lặng
         except Exception as e:
             self._q.put(("step_error", "synth", str(e)))
             return

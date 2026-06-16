@@ -30,6 +30,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +88,77 @@ def provider_label() -> str:
 
 class ClaudeRunError(RuntimeError):
     """Raised when the provider command exits non-zero or output cannot be parsed."""
+
+
+class ClaudeRunCancelled(Exception):
+    """Raised when an in-flight (or pending) LLM call is cancelled by the user.
+
+    Deliberately NOT a subclass of ClaudeRunError so the judge/synth retry
+    `except (ClaudeRunError, ...)` blocks don't swallow it — a cancel must
+    propagate all the way up and stop the pipeline.
+    """
+
+
+def _kill_proc(proc: "subprocess.Popen") -> None:
+    """Kill a running provider process — its whole tree on Windows.
+
+    `claude`/`ccs` spawn child node processes; killing only the direct child
+    can leave the real LLM request running (and billing). On Windows we use
+    `taskkill /T` to take down the tree; elsewhere `proc.kill()` plus the
+    process group. Best-effort: never raises.
+    """
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True,
+                **_no_window_kwargs(),
+            )
+        else:
+            proc.kill()
+    except Exception:
+        pass
+
+
+class CancelToken:
+    """Cooperative cancel handle shared between the GUI thread and the worker(s).
+
+    The GUI thread calls `cancel()`; worker threads running `run_claude` register
+    their live `Popen` here so `cancel()` can kill it immediately — unblocking the
+    in-flight `communicate()` and stopping token spend. `raise_if_cancelled()`
+    lets the pipeline bail out between calls without launching anything new.
+    """
+
+    def __init__(self) -> None:
+        self._event = threading.Event()
+        self._lock = threading.Lock()
+        self._procs: set[subprocess.Popen] = set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._event.is_set()
+
+    def cancel(self) -> None:
+        self._event.set()
+        with self._lock:
+            procs = list(self._procs)
+        for p in procs:
+            _kill_proc(p)
+
+    def raise_if_cancelled(self) -> None:
+        if self._event.is_set():
+            raise ClaudeRunCancelled("cancelled by user")
+
+    def _register(self, proc: "subprocess.Popen") -> None:
+        with self._lock:
+            self._procs.add(proc)
+        # Race: cancel() may have fired between raise_if_cancelled and Popen.
+        if self._event.is_set():
+            _kill_proc(proc)
+
+    def _unregister(self, proc: "subprocess.Popen") -> None:
+        with self._lock:
+            self._procs.discard(proc)
 
 
 _FENCED_RE = re.compile(r"```(?:json)?\s*(.+?)```", re.DOTALL)
@@ -178,6 +250,26 @@ def _claude_command() -> list[str]:
     return [launcher, "-p"]
 
 
+def _no_window_kwargs() -> dict[str, Any]:
+    """Extra ``subprocess`` kwargs that stop a console window flashing on Windows.
+
+    When the GUI runs as a windowed (console-less) process, spawning the
+    ``claude``/``ccs`` CLIs makes Windows allocate a fresh console for each
+    child — empty black windows pop up and vanish. ``CREATE_NO_WINDOW`` keeps
+    the child console-less; ``STARTUPINFO``/``SW_HIDE`` covers ``.cmd``/``.bat``
+    shims (npm shims) that go through cmd.exe. No-op on non-Windows platforms.
+    """
+    if os.name != "nt":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    return {
+        "creationflags": subprocess.CREATE_NO_WINDOW,
+        "startupinfo": startupinfo,
+    }
+
+
 def _subprocess_env() -> dict[str, str]:
     """Environment for the ccs subprocess.
 
@@ -215,14 +307,69 @@ def _strip_ccs_wrapper(raw: str) -> str:
     return "\n".join(kept).strip()
 
 
-def run_claude(prompt: str, *, timeout: float = 180.0) -> str:
+def _exec_cancellable(
+    cmd: list[str], env: dict[str, str], timeout: float,
+    label: str, missing_bin: str, missing_name: str, cancel: "CancelToken",
+) -> str:
+    """Run `cmd` via Popen so `cancel` can kill it mid-flight.
+
+    When `cancel.cancel()` fires from another thread it kills the process; the
+    blocked `communicate()` returns and we raise ClaudeRunCancelled instead of a
+    bogus non-zero-exit error.
+    """
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            stdin=subprocess.DEVNULL,
+            **_no_window_kwargs(),
+        )
+    except FileNotFoundError as e:
+        raise ClaudeRunError(
+            f"{missing_name} CLI not found on PATH ({missing_bin})"
+        ) from e
+
+    cancel._register(proc)
+    try:
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as e:
+            _kill_proc(proc)
+            proc.communicate()
+            raise ClaudeRunError(f"{label} timed out after {timeout}s") from e
+    finally:
+        cancel._unregister(proc)
+
+    # If cancel killed the proc, communicate() returned with a non-zero code;
+    # surface it as a cancel, not a command failure.
+    cancel.raise_if_cancelled()
+    if proc.returncode != 0:
+        raise ClaudeRunError(f"{label} exited {proc.returncode}: {(stderr or '').strip()}")
+    return stdout
+
+
+def run_claude(
+    prompt: str, *, timeout: float = 180.0, cancel: "CancelToken | None" = None,
+) -> str:
     """Invoke the selected provider with `<prompt>` and return its stdout.
 
     Routes to `claude -p` or `ccs one -p` per the ``LLM_PROVIDER`` env var
     (see module docstring). The CCS result-formatter box is stripped before
     returning (a no-op for the plain `claude` output). Raises ClaudeRunError on
     non-zero exit, timeout, or a missing CLI.
+
+    Pass `cancel` (a CancelToken) to make the call killable: if cancelled from
+    another thread the subprocess is terminated and ClaudeRunCancelled is raised
+    so no further tokens are spent.
     """
+    if cancel is not None:
+        cancel.raise_if_cancelled()
+
     if _provider() == PROVIDER_CLAUDE:
         cmd = _claude_command() + [prompt]
         env = os.environ.copy()
@@ -234,6 +381,13 @@ def run_claude(prompt: str, *, timeout: float = 180.0) -> str:
         env = _subprocess_env()
         label = f"ccs {profile} -p"
         missing_bin, missing_name = CCS_BIN, "ccs"
+
+    if cancel is not None:
+        return _strip_ccs_wrapper(
+            _exec_cancellable(cmd, env, timeout, label, missing_bin, missing_name, cancel)
+        )
+
+    # No cancel token → simple blocking call (keeps the original code path).
     try:
         result = subprocess.run(
             cmd,
@@ -243,6 +397,8 @@ def run_claude(prompt: str, *, timeout: float = 180.0) -> str:
             errors="replace",
             timeout=timeout,
             env=env,
+            stdin=subprocess.DEVNULL,
+            **_no_window_kwargs(),
         )
     except subprocess.TimeoutExpired as e:
         raise ClaudeRunError(f"{label} timed out after {timeout}s") from e
@@ -257,9 +413,11 @@ def run_claude(prompt: str, *, timeout: float = 180.0) -> str:
     return _strip_ccs_wrapper(result.stdout)
 
 
-def run_claude_json(prompt: str, *, timeout: float = 180.0) -> Any:
+def run_claude_json(
+    prompt: str, *, timeout: float = 180.0, cancel: "CancelToken | None" = None,
+) -> Any:
     """Run prompt and parse the output as JSON. One self-heal retry on parse fail."""
-    raw = run_claude(prompt, timeout=timeout)
+    raw = run_claude(prompt, timeout=timeout, cancel=cancel)
     try:
         return json.loads(extract_json_block(raw))
     except (json.JSONDecodeError, ValueError) as first_err:
@@ -268,5 +426,5 @@ def run_claude_json(prompt: str, *, timeout: float = 180.0) -> Any:
             "with no prose. Output JSON only.\n\n"
             f"PARSE_ERROR: {first_err}\n\nORIGINAL:\n{raw}"
         )
-        raw2 = run_claude(repair_prompt, timeout=min(60.0, timeout))
+        raw2 = run_claude(repair_prompt, timeout=min(60.0, timeout), cancel=cancel)
         return json.loads(extract_json_block(raw2))

@@ -33,7 +33,14 @@ from _lib.candidate_schema import (  # noqa: E402
     normalize_skill_type,
     split_accepted,
 )
-from _lib.claude_runner import ClaudeRunError, provider_label, run_claude_json  # noqa: E402
+from functools import partial  # noqa: E402
+
+from _lib.claude_runner import (  # noqa: E402
+    CancelToken,
+    ClaudeRunError,
+    provider_label,
+    run_claude_json,
+)
 from _lib.debate import run_debate  # noqa: E402
 from _lib.judge_prompts import (  # noqa: E402
     JUDGES,
@@ -69,10 +76,22 @@ def run_judge(
     timeout: float = 300.0,
     installed_skills_dir: Path | None = None,
     log_fn=print,
+    cancel: CancelToken | None = None,
 ) -> Path:
-    """Chạy judge pipeline. Trả về Path tới candidate_skills.json."""
+    """Chạy judge pipeline. Trả về Path tới candidate_skills.json.
+
+    `cancel` (CancelToken) cho phép huỷ thật: mọi call LLM đi qua `runner` đã bind
+    token, và ta kiểm tra `raise_if_cancelled()` ở các mốc để dừng ngay.
+    """
     if installed_skills_dir is None:
         installed_skills_dir = Path.home() / ".claude" / "skills"
+
+    # Mọi call LLM trong judge đi qua runner này → tự huỷ được khi cancel.
+    runner = partial(run_claude_json, cancel=cancel)
+
+    def _check_cancel() -> None:
+        if cancel is not None:
+            cancel.raise_if_cancelled()
 
     today = _date.today().isoformat()
     out_dir = DATA_ROOT / f"judge_{today}"
@@ -98,7 +117,7 @@ def run_judge(
 
         log_fn(f"[judge] triage: `{provider_label()}` (timeout={timeout}s)")
         triage_prompt = build_triage_prompt(cluster_dicts, installed)
-        triage = run_claude_json(triage_prompt, timeout=timeout)
+        triage = runner(triage_prompt, timeout=timeout)
         (out_dir / "_raw_triage.txt").write_text(
             json.dumps(triage, ensure_ascii=False, indent=2), encoding="utf-8")
         triage = [normalize_skill_name(normalize_skill_type(c)) for c in triage]
@@ -110,12 +129,13 @@ def run_judge(
 
         enriched: list[dict] = []
         for c in accepted_triage:
+            _check_cancel()  # dừng ngay trước khi tốn LLM cho candidate kế tiếp
             src = c.get("evidence", {}).get("source_files", [])
             traces = load_traces(src, sessions_dir)
             log_fn(f"[judge] debate: {c['name']} ({len(traces)} traces, {len(JUDGES)} judges)")
 
             try:
-                facts = run_claude_json(build_extract_prompt(c, traces), timeout=timeout)
+                facts = runner(build_extract_prompt(c, traces), timeout=timeout)
                 (out_dir / f"_raw_extract_{c['name']}.txt").write_text(
                     json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")
             except (ClaudeRunError, ValueError, json.JSONDecodeError) as e:
@@ -123,13 +143,14 @@ def run_judge(
                 facts = {"extract_error": str(e)}
 
             verdicts = run_debate(
-                c, facts, traces, judges=JUDGES, runner=run_claude_json, timeout=timeout
+                c, facts, traces, judges=JUDGES, runner=runner, timeout=timeout
             )
             (out_dir / f"_raw_debate_{c['name']}.txt").write_text(
                 json.dumps(verdicts, ensure_ascii=False, indent=2), encoding="utf-8")
+            _check_cancel()  # debate nuốt exception nội bộ → kiểm tra lại ở đây
 
             try:
-                verdict = run_claude_json(
+                verdict = runner(
                     build_consolidator_prompt(c, facts, verdicts), timeout=timeout)
                 (out_dir / f"_raw_consolidate_{c['name']}.txt").write_text(
                     json.dumps(verdict, ensure_ascii=False, indent=2), encoding="utf-8")
