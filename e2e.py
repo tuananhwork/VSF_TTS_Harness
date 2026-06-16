@@ -25,9 +25,11 @@ def _latest(pattern: str) -> Path:
     return dirs[0]
 
 
-def _run(*args: str) -> None:
+def _run(*args: str, extra_env: dict[str, str] | None = None) -> None:
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
+    if extra_env:
+        env.update(extra_env)
     subprocess.run(args, check=True, cwd=ROOT, env=env)
 
 
@@ -39,7 +41,24 @@ def main() -> None:
     )
     parser.add_argument("--min-recurrence", default="2")
     parser.add_argument("--max-deepdive", default="5")
+    parser.add_argument(
+        "--llm-provider",
+        default="claude",
+        metavar="PROVIDER",
+        help="LLM provider: 'claude' (default) or 'ccs-one'.",
+    )
+    parser.add_argument(
+        "--ccs-profile",
+        default="one",
+        metavar="PROFILE",
+        help="CCS profile name to use when --llm-provider=ccs-one (default: 'one').",
+    )
     args = parser.parse_args()
+
+    llm_env = {
+        "LLM_PROVIDER": args.llm_provider.upper().replace("-", "_"),
+        "CCS_PROFILE": args.ccs_profile,
+    }
 
     _run("uv", "sync")
 
@@ -56,6 +75,7 @@ def main() -> None:
         "--top-candidates", "5",
         "--min-recurrence", str(args.min_recurrence),
         "--max-deepdive", str(args.max_deepdive),
+        extra_env=llm_env,
     )
     judge_dir = _latest("judge_*")
     print(f"[e2e] judge: {judge_dir}")
@@ -64,6 +84,7 @@ def main() -> None:
         sys.executable, "scripts/synth.py",
         "--candidates", str(judge_dir / "candidate_skills.json"),
         "--top", "3", "--timeout", "300",
+        extra_env=llm_env,
     )
     proposal_dir = _latest("skills_*_proposal")
     print(f"[e2e] proposal: {proposal_dir}")

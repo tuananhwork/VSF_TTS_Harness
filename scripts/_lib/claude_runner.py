@@ -35,8 +35,11 @@ from typing import Any
 
 
 CCS_BIN = "ccs"
-CCS_PROFILE = "one"
 CLAUDE_BIN = "claude"
+
+
+def _ccs_profile() -> str:
+    return os.environ.get("CCS_PROFILE", "one").strip() or "one"
 
 LLM_PROVIDER_ENV = "LLM_PROVIDER"
 PROVIDER_CLAUDE = "CLAUDE"
@@ -208,7 +211,7 @@ def run_claude(prompt: str, *, timeout: float = 180.0) -> str:
         label = "claude -p"
         missing_bin, missing_name = CLAUDE_BIN, "claude"
     else:
-        cmd = _ccs_command() + [CCS_PROFILE, "-p", prompt]
+        cmd = _ccs_command() + [_ccs_profile(), "-p", prompt]
         env = _subprocess_env()
         label = "ccs one -p"
         missing_bin, missing_name = CCS_BIN, "ccs"
