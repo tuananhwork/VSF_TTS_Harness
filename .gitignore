@@ -10,7 +10,7 @@ wheels/
 .venv
 
 # Runtime data (sessions, judge output, skill proposals)
-# data/
+data/
 
 # pytest
 .pytest_cache/

@@ -1,9 +1,0 @@
-{
-  "final_score": {
-    "recurrence": 4,
-    "cohesion": 4,
-    "personalization": 5
-  },
-  "rejected_reason": null,
-  "consolidator_note": "Pattern process_macro lặp gần y hệt qua 3 session (efficiency chấm 5, tiết kiệm hàng chục bước test→báo cáo Teams) nên đáng đóng gói, dù quality chỉ neutral (3) vì các 'retry' chủ yếu là flakiness screenshot desktop chứ không phải sửa sai ý định — bất đồng này hạ trục cohesion về 4. Personalization 5 nhờ Teams cá nhân + ràng buộc môi trường .venv; lưu ý facts bị extract_error nên quyết nghị dựa chính vào verdicts."
-}

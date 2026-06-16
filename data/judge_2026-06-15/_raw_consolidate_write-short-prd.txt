@@ -1,9 +1,0 @@
-{
-  "final_score": {
-    "recurrence": 4,
-    "cohesion": 3,
-    "personalization": 3
-  },
-  "rejected_reason": null,
-  "consolidator_note": "Candidate là process_macro nên giá trị nằm ở việc template hóa chuỗi orchestration lặp lại (clarify-scope → write → present qua cả 4 session, dài nhất ~10 bước thủ công) — đúng trục PROCESS_ORCHESTRATION mà efficiency judge ủng hộ. Bất đồng với quality judge: judge này reject vì không thấy correction/retry, nhưng đó là trục INEFFICIENT_RETRY, không phải tiêu chí loại của một process_macro (chạy trơn không sửa sai là điểm cộng, không phải lý do bác). Hạ recurrence/cohesion/personalization so với prelim vì có 1 session chỉ 2 lượt làm giảm độ đồng đều và facts trích bị lỗi nên personalization chưa được củng cố bằng evidence."
-}
