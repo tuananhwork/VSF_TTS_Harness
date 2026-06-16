@@ -1,0 +1,15 @@
+# Golden tests — {{ name }}
+
+3 sample queries built from evidence. Run them manually in Claude Cowork and
+verify the skill triggers and the output meets expectation.
+
+{% for t in golden_tests %}
+## Test {{ loop.index }}
+
+**Query:**
+{{ t.query }}
+
+**Expected:**
+{{ t.expected }}
+
+{% endfor %}

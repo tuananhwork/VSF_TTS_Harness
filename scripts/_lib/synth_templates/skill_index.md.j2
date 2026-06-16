@@ -1,0 +1,58 @@
+---
+name: {{ name }}
+description: {{ description | tojson }}
+metadata:
+  skill_type: {{ skill_type }}
+  risk_flags: {{ risk_flags | tojson }}
+---
+
+# {{ name }}
+
+## When to use
+
+{{ when_to_use }}
+{% if core_lesson %}
+
+## Core lesson
+
+{{ core_lesson }}
+{% endif %}
+
+## Capabilities
+{% if split %}
+
+| Capability | When | Detail |
+| --- | --- | --- |
+{% for cap in capabilities %}
+| {{ cap.title }} | {{ cap.when }} | [`references/{{ cap.slug }}.md`](references/{{ cap.slug }}.md) |
+{% endfor %}
+{% else %}
+{% set cap = capabilities[0] %}
+
+**{{ cap.title }}** — {{ cap.when }}
+
+{% for step in cap.steps %}
+{{ loop.index }}. {{ step }}
+{% endfor %}
+{% if cap.deterministic_script %}
+
+Deterministic step → run `scripts/{{ cap.deterministic_script.name }}`
+({{ cap.deterministic_script.purpose }}).
+{% endif %}
+{% endif %}
+{% if red_flags %}
+
+## Red flags — STOP
+
+{% for rf in red_flags %}
+- {{ rf }}
+{% endfor %}
+{% endif %}
+{% if related %}
+
+## Related skills
+
+{% for r in related %}
+- `{{ r }}`
+{% endfor %}
+{% endif %}

@@ -1,0 +1,56 @@
+# Evidence — {{ name }}
+
+> Provenance for this skill draft. NOT part of the skill instructions.
+
+- skill_type: {{ skill_type }}
+- behavior_class: {{ behavior_class }}
+- generated_on: {{ generated_on }}
+- skill_md_hash: {{ hash8 }}
+
+## Source sessions
+
+{% for sid in session_ids %}
+- `{{ sid }}`
+{% endfor %}
+{% if source_files %}
+
+## Source files
+
+{% for sf in source_files %}
+- `{{ sf }}`
+{% endfor %}
+{% endif %}
+
+## Metrics
+
+{% if metrics %}
+- recurrence: {{ metrics.recurrence }}
+- repeat_rate: {{ metrics.repeat_rate }}
+- failure_rate: {{ metrics.failure_rate }}
+{% else %}
+_None recorded._
+{% endif %}
+
+## Good points (raw)
+
+{% for g in good_points %}
+- {{ g }}
+{% endfor %}
+
+## Weak points (raw)
+
+{% for w in weak_points %}
+- {{ w }}
+{% endfor %}
+
+## Improvement notes (raw)
+
+{{ improvement_notes }}
+{% if debate %}
+
+## Debate verdicts
+
+{% for v in debate %}
+- **{{ v.judge }}** [{{ v.stance }}{% if v.axis_score is not none %}, {{ v.axis_score }}/5{% endif %}]: {{ v.argument or v.error }}
+{% endfor %}
+{% endif %}

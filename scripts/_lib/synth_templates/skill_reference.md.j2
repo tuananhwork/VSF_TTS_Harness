@@ -1,0 +1,16 @@
+# {{ cap.title }}
+
+**When:** {{ cap.when }}
+
+## Steps
+
+{% for step in cap.steps %}
+{{ loop.index }}. {{ step }}
+{% endfor %}
+{% if cap.deterministic_script %}
+
+## Script
+
+Deterministic — run `scripts/{{ cap.deterministic_script.name }}`
+({{ cap.deterministic_script.purpose }}).
+{% endif %}
