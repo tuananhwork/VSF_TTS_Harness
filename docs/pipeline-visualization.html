@@ -195,7 +195,7 @@
 <body>
 <header>
   <h1>Pattern — Pipeline xử lý</h1>
-  <p class="subtitle">Từ <b>log Claude Cowork</b> → <b>Skill cá nhân hoá được duyệt &amp; cài đặt</b></p>
+  <p class="subtitle">Từ <b>log Claude</b> (cowork <i>hoặc</i> Claude Code) → <b>Skill cá nhân hoá được duyệt &amp; cài đặt</b></p>
   <p>Quan sát hành vi user → phát hiện pattern lặp lại → đóng gói thành Skill draft</p>
 </header>
 
@@ -215,7 +215,11 @@
 
     <!-- SOURCE -->
     <div class="arrow" style="padding-top:0">
-      <span class="data">📂 Log Claude Desktop &nbsp;<code style="color:var(--muted)">…\Claude\local-agent-mode-sessions\&lt;user&gt;\&lt;workspace&gt;\local_*\audit.jsonl</code></span>
+      <span class="data">📂 Nguồn log <code style="color:var(--muted)">--source</code> · 2 lựa chọn (cùng format message)</span>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:10px">
+        <span class="data" style="border-color:var(--scan)"><b style="color:var(--scan)">claude-cowork</b> (mặc định) &nbsp;<code style="color:var(--muted)">…\Claude\local-agent-mode-sessions\&lt;user&gt;\&lt;ws&gt;\local_*.json + local_*/audit.jsonl</code></span>
+        <span class="data" style="border-color:var(--accept)"><b style="color:var(--accept)">claude-code</b> &nbsp;<code style="color:var(--muted)">~/.claude/projects/&lt;encoded-cwd&gt;/&lt;sessionId&gt;.jsonl</code></span>
+      </div>
     </div>
 
     <!-- STAGE 1: SCAN -->
@@ -223,19 +227,20 @@
       <div class="stage-head">
         <div class="badge">1</div>
         <h2>Scan <span class="tag code">CODE</span></h2>
-        <span class="cmd">uv run python scripts/scan.py</span>
+        <span class="cmd">uv run python scripts/scan.py --source …</span>
       </div>
-      <p class="lead">Trích session JSONL từ log raw của Claude Desktop cho 1 ngày. Không gọi LLM — thuần parse + heuristic.</p>
+      <p class="lead">Trích session JSONL từ log raw (<code>--source</code> = claude-cowork | claude-code) cho 1 ngày. Không gọi LLM — thuần parse + heuristic. Lõi <code>build_summary()</code> dùng chung cho cả 2 nguồn.</p>
       <div class="cols">
         <div>
           <p class="box-title">Các bước</p>
           <ul class="steps">
-            <li><b>Discover</b> session theo cây <code>user/workspace/local_*</code></li>
-            <li><b>Filter theo ngày</b> (<code>TARGET_DATE</code>, mặc định hôm nay) — giữ session có cửa sổ [createdAt, lastActivityAt] chạm ngày</li>
-            <li><b>Parse <code>audit.jsonl</code></b>: dedupe theo uuid, tách turn user / assistant, gom tool_use + tool_result</li>
+            <li><b>Discover</b> — cowork: cặp <code>local_*.json</code> + <code>local_*/audit.jsonl</code>; claude-code: mọi <code>~/.claude/projects/*/*.jsonl</code></li>
+            <li><b>Dựng metadata</b> — cowork đọc file <code>local_*.json</code>; claude-code dựng từ transcript (<code>title←ai-title</code>, <code>intent←user-turn đầu</code>, <code>model</code>, <code>timestamp</code>)</li>
+            <li><b>Filter theo ngày</b> (<code>--target-date</code>, mặc định hôm nay) — giữ session có cửa sổ [createdAt, lastActivityAt] chạm ngày</li>
+            <li><b>Parse events</b>: dedupe theo uuid, tách turn user / assistant, gom tool_use + tool_result; claude-code <b>loại</b> <code>isSidechain</code> + <code>isMeta</code></li>
             <li><b>Tín hiệu từ kết quả</b>: <code>failure_count</code> (action <code>result_ok=False</code>) + cờ <code>repeat</code> (rework: chạy lại tool VỪA FAIL ≤ 60s). Loop sạch (screenshot×N) không tính. Không keyword, độc lập ngôn ngữ.</li>
             <li><b>Compress runs</b>: <code>[A,A,B] → [A×2, B]</code> giữ flow gọn cho judge</li>
-            <li><b>Tổng hợp</b> tool_usage, tool_sequence, mcp_usage, token, outputs_produced</li>
+            <li><b>Tổng hợp</b> tool_usage, tool_sequence, mcp_usage, token, focused_apps, outputs/uploads, slash_commands</li>
           </ul>
         </div>
         <div>
@@ -244,7 +249,7 @@
             <span class="path">data/sessions_&lt;date&gt;_runAt_&lt;ts&gt;/</span>
             <ul>
               <li><code>&lt;process&gt;__&lt;id&gt;.jsonl</code> — 1 file/session: dòng <code>session_summary</code> + nhiều <code>turn</code> + <code>rate_limit</code></li>
-              <li><code>_index.json</code> — scanned / matched + danh sách session</li>
+              <li><code>_index.json</code> — <code>source</code> + scanned / matched + danh sách session</li>
             </ul>
           </div>
         </div>
@@ -415,7 +420,7 @@
   </div>
 
   <footer>
-    <p>Pattern — Behavior → Skill harness cho Claude Cowork (MVP) · 4 bước: <b style="color:var(--scan)">Scan</b> → <b style="color:var(--judge)">Judge</b> → <b style="color:var(--synth)">Synth</b> → <b style="color:var(--accept)">Accept</b></p>
+    <p>Pattern — Behavior → Skill harness cho Claude (cowork &amp; Claude Code, MVP) · 4 bước: <b style="color:var(--scan)">Scan</b> → <b style="color:var(--judge)">Judge</b> → <b style="color:var(--synth)">Synth</b> → <b style="color:var(--accept)">Accept</b></p>
     <p>Chi tiết: <code>README.md</code> · <code>docs/products/agent-debate.md</code> · <code>docs/superpowers/specs/2026-06-13-pattern-end-to-end-design.md</code></p>
   </footer>
 

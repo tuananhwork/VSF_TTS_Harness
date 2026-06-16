@@ -1,12 +1,12 @@
-# Pattern — Behavior → Skill harness for Claude Cowork
+# Pattern — Behavior → Skill harness cho Claude
 
-Quan sát hành vi user trên Claude Cowork → đề xuất Skill draft cá nhân hoá.
+Quan sát hành vi user (Claude Desktop *cowork* hoặc Claude Code CLI) → đề xuất Skill draft cá nhân hoá.
 
 ## Yêu cầu
 
 - Python 3.12+, [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 - Claude Code CLI (`claude`) đã đăng nhập, có trên `PATH`
-- Đã có session log Claude Cowork trên máy (tự động tìm — xem bên dưới)
+- Đã có session log trên máy — `claude-cowork` hoặc `claude-code` (tự động tìm — xem bên dưới)
 
 ## Chạy toàn bộ pipeline (1 lệnh)
 
@@ -71,7 +71,7 @@ CLAUDE_LOG_ROOT=/path/to/logs uv run e2e.py --source claude-code
 
 ## Quét ngày khác
 
-Mở `scripts/scan.py`, đổi `TARGET_DATE` ở đầu file:
+Truyền cờ `--target-date` cho `scan.py` (hoặc sửa hằng `TARGET_DATE` ở đầu file làm mặc định):
 
 | Giá trị | Ý nghĩa |
 |---------|---------|
@@ -80,13 +80,17 @@ Mở `scripts/scan.py`, đổi `TARGET_DATE` ở đầu file:
 | `"2026-06-15"` | Đúng 1 ngày |
 | `"2026-06-14, 2026-06-15"` | Nhiều ngày |
 
+```bash
+uv run python scripts/scan.py --source claude-code --target-date ALL
+```
+
 ## Chạy từng bước thủ công
 
 ```bash
 uv sync
 
-# 1. Scan
-uv run python scripts/scan.py
+# 1. Scan  (--source claude-cowork | claude-code, --target-date tuỳ chọn)
+uv run python scripts/scan.py --source claude-cowork
 
 # 2. Judge
 uv run python scripts/judge.py \
