@@ -32,8 +32,9 @@ uv sync
 uv run python scripts/scan.py
 ```
 
-Mặc định scan ngày hôm nay; xem `TARGET_DATE` trong `scripts/scan.py` để đổi.
-Output: `data/sessions_<date>_runAt_<runTs>/`.
+Đổi `TARGET_DATE` trong `scripts/scan.py`: bỏ trống = hôm nay, `ALL` = tất cả,
+`YYYY-MM-DD` = 1 ngày, hoặc nhiều ngày cách nhau bởi dấu phẩy.
+Output: `data/sessions_<label>_runAt_<runTs>/` (`<label>` = `ALL` / ngày / `d1+d2`).
 
 ### 2) Judge — triage → multi-judge debate → candidate skills
 

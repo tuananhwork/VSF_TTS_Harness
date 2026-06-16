@@ -23,9 +23,12 @@ SOURCE_LOG_ROOT = Path(
 
 # SOURCE_LOG_ROOT = Path(r"C:\User\chuba")
 
-# YYYY-MM-DD. Leave None to use today's date.
-# A session is included if its [createdAt, lastActivityAt] window touches this date.
-# TARGET_DATE: str | None = None
+# Định dạng TARGET_DATE:
+#   - Bỏ trống ("" / None)      → ngày hôm nay
+#   - "ALL"                     → quét tất cả session (không lọc ngày)
+#   - "YYYY-MM-DD"              → đúng 1 ngày cụ thể
+#   - "YYYY-MM-DD, YYYY-MM-DD"  → nhiều ngày, cách nhau bởi dấu phẩy
+# Một session được giữ nếu cửa sổ [createdAt, lastActivityAt] chạm bất kỳ ngày nào.
 TARGET_DATE = "2026-06-15"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -100,12 +103,29 @@ class SessionSummary:
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
 
-def parse_target_date() -> date:
-    return (
-        datetime.strptime(TARGET_DATE, "%Y-%m-%d").date()
-        if TARGET_DATE
-        else datetime.now().date()
-    )
+def parse_target_dates() -> list[date] | None:
+    """Resolve TARGET_DATE into the dates to include.
+
+    Returns a list of dates, or None to mean "scan all sessions" (no filter).
+    See the TARGET_DATE comment in CONFIG for the accepted formats.
+    """
+    raw = (TARGET_DATE or "").strip()
+    if not raw:
+        return [datetime.now().date()]
+    if raw.upper() == "ALL":
+        return None
+    return [
+        datetime.strptime(part.strip(), "%Y-%m-%d").date()
+        for part in raw.split(",")
+        if part.strip()
+    ]
+
+
+def target_label(targets: list[date] | None) -> str:
+    """Filename-safe label for the resolved target dates."""
+    if targets is None:
+        return "ALL"
+    return "+".join(t.isoformat() for t in targets)
 
 
 def epoch_ms_to_date(ms: int | None) -> date | None:
@@ -231,12 +251,17 @@ def load_meta(path: Path) -> dict[str, Any]:
         return {}
 
 
-def session_touches_date(meta: dict[str, Any], target: date) -> bool:
+def session_touches_dates(meta: dict[str, Any], targets: list[date] | None) -> bool:
+    # None = ALL: keep every session regardless of its date window.
+    if targets is None:
+        return True
     created = epoch_ms_to_date(meta.get("createdAt"))
     last = epoch_ms_to_date(meta.get("lastActivityAt"))
     start = created or last
     end = last or created
-    return bool(start and end and start <= target <= end)
+    if not (start and end):
+        return False
+    return any(start <= t <= end for t in targets)
 
 
 def parse_session(
@@ -441,9 +466,10 @@ def discover_sessions(root: Path) -> Iterable[tuple[Path, Path, str]]:
 
 
 def main() -> int:
-    target = parse_target_date()
+    targets = parse_target_dates()
+    label = target_label(targets)
     run_ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    out_dir = DATA_ROOT / f"sessions_{target.isoformat()}_runAt_{run_ts}"
+    out_dir = DATA_ROOT / f"sessions_{label}_runAt_{run_ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     index: list[dict[str, Any]] = []
@@ -451,7 +477,7 @@ def main() -> int:
     for meta_path, audit_path, ws_id in discover_sessions(SOURCE_LOG_ROOT):
         scanned += 1
         meta = load_meta(meta_path)
-        if not session_touches_date(meta, target):
+        if not session_touches_dates(meta, targets):
             continue
         matched += 1
         summary, turns, rate_limits = parse_session(meta_path, audit_path, ws_id)
@@ -470,7 +496,7 @@ def main() -> int:
 
     (out_dir / "_index.json").write_text(
         json.dumps({
-            "target_date": target.isoformat(),
+            "target_date": label,
             "run_at": run_ts,
             "source_root": str(SOURCE_LOG_ROOT),
             "scanned": scanned,
@@ -480,7 +506,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    print(f"\nDone. {matched}/{scanned} sessions matched {target} -> {out_dir}")
+    print(f"\nDone. {matched}/{scanned} sessions matched {label} -> {out_dir}")
     return 0
 
 
