@@ -64,6 +64,27 @@ def test_recurrence_guard_counts_distinct_sessions() -> None:
     assert out[0]["rejected_reason"] == "low_recurrence"
 
 
+def test_recurrence_guard_prefers_verified_metrics_recurrence() -> None:
+    # Candidate cites 3 ids but only 1 was real → metrics.recurrence == 1 → reject.
+    cands = [{
+        "name": "a",
+        "evidence": {"session_ids": ["s1", "s2", "s3"]},
+        "metrics": {"recurrence": 1},
+    }]
+    out = apply_recurrence_guard(cands, min_recurrence=2)
+    assert out[0]["rejected_reason"] == "low_recurrence"
+
+
+def test_recurrence_guard_accepts_when_verified_recurrence_meets_min() -> None:
+    cands = [{
+        "name": "a",
+        "evidence": {"session_ids": ["s1", "s2"]},
+        "metrics": {"recurrence": 2},
+    }]
+    out = apply_recurrence_guard(cands, min_recurrence=2)
+    assert out[0].get("rejected_reason") is None
+
+
 def test_recurrence_guard_preserves_existing_rejection() -> None:
     cands = [{"name": "a", "evidence": {"session_ids": ["s1"]},
               "rejected_reason": "too_generic"}]

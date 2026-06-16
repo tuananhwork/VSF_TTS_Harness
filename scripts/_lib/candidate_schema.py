@@ -44,14 +44,20 @@ def normalize_skill_name(candidate: dict[str, Any]) -> dict[str, Any]:
 def apply_recurrence_guard(
     candidates: list[dict[str, Any]], *, min_recurrence: int = 2
 ) -> list[dict[str, Any]]:
-    """Reject candidates whose cited evidence has fewer than `min_recurrence`
-    distinct sessions. Existing rejections are preserved (kept in the list with
-    their reason, per the rejected-stays-visible convention)."""
+    """Reject candidates whose recurrence is below `min_recurrence`. Prefers the
+    code-verified `metrics.recurrence` (computed on the sessions that actually
+    exist) when present; falls back to the distinct cited session_ids otherwise.
+    Existing rejections are preserved (kept in the list with their reason, per
+    the rejected-stays-visible convention)."""
     out: list[dict[str, Any]] = []
     for c in candidates:
         c = dict(c)
         if not c.get("rejected_reason"):
-            distinct = len(set(c.get("evidence", {}).get("session_ids", [])))
+            metrics = c.get("metrics")
+            if metrics is not None:
+                distinct = int(metrics.get("recurrence", 0))
+            else:
+                distinct = len(set(c.get("evidence", {}).get("session_ids", [])))
             if distinct < min_recurrence:
                 c["rejected_reason"] = "low_recurrence"
         out.append(c)
