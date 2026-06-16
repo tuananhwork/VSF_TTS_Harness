@@ -67,6 +67,9 @@ _PATTERN_REPORT_TMPL = _env.from_string("""\
 ### {{ loop.index }}. `{{ c.name }}` — {{ c.skill_type }} ({{ c.behavior_class }})
 - Trigger (VI): {{ c.trigger_intent.vi }}
 - Trigger (EN): {{ c.trigger_intent.en }}
+{% if c.metrics %}
+- recurrence (recomputed): {{ c.metrics.recurrence }}, repeat_rate: {{ "%.3f"|format(c.metrics.repeat_rate) }}, pivot_rate: {{ "%.3f"|format(c.metrics.pivot_rate) }}{% if c.metrics.unknown_session_ids %} — ⚠️ bỏ {{ c.metrics.unknown_session_ids | length }} session_id bịa{% endif %}
+{% endif %}
 - Score total: {{ c._score_total }}
 - Flow (action template):
 {% for step in c.action_template %}

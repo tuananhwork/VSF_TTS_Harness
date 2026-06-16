@@ -31,6 +31,8 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
             "trigger_intent": {"vi": "Khi user muốn tóm tắt PDF", "en": "When user wants to summarize PDF"},
             "action_template": [{"step": 1, "tool": "scan", "input_shape": "path"}],
             "evidence": {"session_ids": ["s1", "s2"], "process_names": ["proc-a"]},
+            "metrics": {"recurrence": 3, "repeat_rate": 0.0, "pivot_rate": 0.0,
+                        "behavior_class": "process"},
             "final_score": {"recurrence": 4, "cohesion": 4, "personalization": 3},
             "behavior_class": "inefficient",
             "good_points": ["đọc file trước khi tóm tắt"],
@@ -66,6 +68,8 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
     assert "efficiency" in md and "quality" in md
     assert "tốn 12 lượt chat lặp lại" in md
     assert "Phê duyệt: flow lặp lại, đáng đóng gói" in md
+    # Recomputed metrics surfaced so the human sees the authoritative recurrence.
+    assert "recurrence (recomputed): 3" in md
 
 
 from pathlib import Path
