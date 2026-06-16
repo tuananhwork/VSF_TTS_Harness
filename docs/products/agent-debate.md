@@ -16,7 +16,7 @@ CONSOLIDATOR - Quyết nghị: Phê duyệt
 
 ---
 
-## Quyết định kiến trúc — ghép vào pipeline judge (Cách B)
+## Quyết định kiến trúc — ghép vào pipeline judge
 
 Debate **không viết lại pipeline**. Nó thay đúng tầng `deepdive` hiện tại trong
 `scripts/judge.py` (cùng bản chất: đọc full trace của 1 candidate rồi phán xét).

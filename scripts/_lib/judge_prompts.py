@@ -62,7 +62,7 @@ Output STRICT JSON array; schema mỗi phần tử:
 KHÔNG kèm prose ngoài JSON."""
 
 
-# ── PASS 2 (Cách B debate) is three sub-steps: EXTRACT → JUDGES → CONSOLIDATE.
+# ── PASS 2 (debate) is three sub-steps: EXTRACT → JUDGES → CONSOLIDATE.
 #    See docs/products/agent-debate.md "Quyết định kiến trúc — Cách B".
 
 EXTRACT_INSTRUCTIONS = """PASS 2 · EXTRACT (1 candidate, chạy trên FULL TRACE).

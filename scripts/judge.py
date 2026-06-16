@@ -124,7 +124,7 @@ def main(
         )
         accepted_triage = accepted_triage[:max_deepdive]
 
-        # ── PASS 2 (Cách B debate): extract → judges → consolidate ──────────
+        # ── PASS 2 (debate): extract → judges → consolidate ──────────
         # Each sub-step can fail without tanking the candidate: extract/consolidator
         # errors are recorded as fields; a failed judge is recorded as a verdict
         # with an `error` key (see _lib/debate.py). The triage candidate always
