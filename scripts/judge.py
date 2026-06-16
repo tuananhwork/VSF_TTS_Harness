@@ -22,7 +22,11 @@ import click
 # Allow `from _lib.* import ...` when run as `python scripts/judge.py`.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _lib.aggregator import aggregate, load_sessions  # noqa: E402
+from _lib.aggregator import (  # noqa: E402
+    aggregate,
+    load_sessions,
+    recompute_candidate_metrics,
+)
 from _lib.candidate_schema import (  # noqa: E402
     apply_recurrence_guard,
     normalize_skill_name,
@@ -109,7 +113,10 @@ def main(
             json.dumps(triage, ensure_ascii=False, indent=2), encoding="utf-8")
         triage = [normalize_skill_name(normalize_skill_type(c)) for c in triage]
 
-        # ── GUARD: code-level recurrence check ───────────────────────────────
+        # ── RECOMPUTE: metric thật trên evidence đã merge (không phải tool-group)
+        triage = recompute_candidate_metrics(triage, sessions)
+
+        # ── GUARD: code-level recurrence check (dùng metrics.recurrence đã verify)
         triage = apply_recurrence_guard(triage, min_recurrence=min_recurrence)
         accepted_triage, rejected = split_accepted(triage)
         click.echo(
