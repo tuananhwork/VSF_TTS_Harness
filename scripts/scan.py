@@ -6,6 +6,7 @@ recurring action patterns. See docs/data_goal.md for the field rationale.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -16,14 +17,19 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
-def _detect_log_root() -> Path:
-    """Auto-detect the Claude local-agent-mode-sessions folder for the current OS.
+SOURCE_COWORK = "claude-cowork"
+SOURCE_CLAUDE_CODE = "claude-code"
+
+
+def _detect_log_root(source: str = SOURCE_COWORK) -> Path:
+    """Auto-detect the log root for the chosen source on the current OS.
 
     Priority:
-      1. CLAUDE_LOG_ROOT env var (absolute override for non-standard installs)
-      2. Windows  – glob AppData/Local/Packages/Claude_*/...  (handles any package suffix)
-      3. macOS    – ~/Library/Application Support/Claude/...
-      4. Linux    – ~/.config/Claude/...
+      1. CLAUDE_LOG_ROOT env var (absolute override; applies to the chosen source)
+      2. claude-cowork → Claude Desktop local-agent-mode-sessions
+         (Win: glob AppData/Local/Packages/Claude_*/...; mac: Application Support;
+          Linux: ~/.config/Claude)
+      3. claude-code   → ~/.claude/projects (cross-platform)
 
     Raises SystemExit with a helpful message if nothing is found so the user
     knows exactly what to set.
@@ -33,37 +39,35 @@ def _detect_log_root() -> Path:
         return Path(env)
 
     home = Path.home()
-    candidates: list[Path] = []
 
-    if sys.platform == "win32":
+    if source == SOURCE_CLAUDE_CODE:
+        candidates = [home / ".claude" / "projects"]
+        layout = "<encoded-cwd>/<sessionId>.jsonl"
+    elif sys.platform == "win32":
         packages = home / "AppData" / "Local" / "Packages"
         # Glob handles any Claude_<suffix> package family name.
         candidates = sorted(packages.glob(
             "Claude_*/LocalCache/Roaming/Claude/local-agent-mode-sessions"
         ))
+        layout = "<userId>/<workspaceId>/local_<sessionId>/audit.jsonl"
     elif sys.platform == "darwin":
         candidates = [home / "Library" / "Application Support" / "Claude" / "local-agent-mode-sessions"]
+        layout = "<userId>/<workspaceId>/local_<sessionId>/audit.jsonl"
     else:
         candidates = [home / ".config" / "Claude" / "local-agent-mode-sessions"]
+        layout = "<userId>/<workspaceId>/local_<sessionId>/audit.jsonl"
 
     for p in candidates:
         if p.exists():
             return p
 
-    hint = (
-        "Set CLAUDE_LOG_ROOT=<path> to the folder that contains "
-        "<userId>/<workspaceId>/local_<sessionId>/audit.jsonl"
-    )
     raise SystemExit(
-        f"[scan] Could not find Claude session logs on this machine.\n{hint}"
+        f"[scan] Could not find {source} logs on this machine.\n"
+        f"Set CLAUDE_LOG_ROOT=<path> to the folder that contains {layout}"
     )
 
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-
-# Root folder that contains <userId>/<workspaceId>/local_<sessionId>/audit.jsonl
-# Auto-detected from the OS; override with CLAUDE_LOG_ROOT env var if needed.
-SOURCE_LOG_ROOT = _detect_log_root()
 
 # Định dạng TARGET_DATE:
 #   - Bỏ trống ("" / None)      → ngày hôm nay
@@ -152,13 +156,14 @@ class SessionSummary:
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
 
-def parse_target_dates() -> list[date] | None:
-    """Resolve TARGET_DATE into the dates to include.
+def parse_target_dates(raw: str | None = None) -> list[date] | None:
+    """Resolve the target-date spec into the dates to include.
 
+    `raw` defaults to the module TARGET_DATE constant (None falls back to it).
     Returns a list of dates, or None to mean "scan all sessions" (no filter).
     See the TARGET_DATE comment in CONFIG for the accepted formats.
     """
-    raw = (TARGET_DATE or "").strip()
+    raw = (TARGET_DATE if raw is None else raw).strip()
     if not raw:
         return [datetime.now().date()]
     if raw.upper() == "ALL":
@@ -328,10 +333,23 @@ def session_touches_dates(meta: dict[str, Any], targets: list[date] | None) -> b
     return any(start <= t <= end for t in targets)
 
 
-def parse_session(
-    meta_path: Path, audit_path: Path, workspace_id: str
+def build_summary(
+    meta: dict[str, Any],
+    events: Iterable[dict[str, Any]],
+    artifact_dir: Path | None,
+    workspace_id: str,
+    *,
+    skip_sidechain: bool = False,
 ) -> tuple[SessionSummary, list[TurnRecord], list[dict[str, Any]]]:
-    meta = load_meta(meta_path)
+    """Turn a stream of audit/transcript events + a metadata dict into the
+    three-layer session record. Shared by both log sources (cowork audit.jsonl
+    and Claude Code transcripts); only discovery + meta assembly differ.
+
+    `artifact_dir` is the folder holding `outputs/` and `uploads/` (cowork);
+    pass None when the source has no such artifacts (Claude Code).
+    `skip_sidechain` drops sub-agent turns (`isSidechain`) — used for Claude
+    Code so only the user-driven trajectory is mined.
+    """
     turns: list[TurnRecord] = []
     rate_limits: list[dict[str, Any]] = []
     tool_usage: dict[str, int] = {}
@@ -342,8 +360,12 @@ def parse_session(
     focused_apps: list[str] = []
     turn_idx = 0
 
-    for event in iter_jsonl(audit_path):
+    for event in events:
         if not isinstance(event, dict):
+            continue
+
+        # Drop sub-agent sidechain turns when requested (Claude Code).
+        if skip_sidechain and event.get("isSidechain"):
             continue
 
         # Dedupe — the audit log emits both `assistant` and `message` envelopes
@@ -370,7 +392,9 @@ def parse_session(
             continue
 
         # — User-envelope events (real user turn OR wrapped tool_result) —
-        if etype == "user" and not event.get("isReplay"):
+        # `isMeta` user events are system-injected reminders (Claude Code), not
+        # the user's own turn — skip them so intent/turns stay clean.
+        if etype == "user" and not event.get("isReplay") and not event.get("isMeta"):
             content = event.get("message", {}).get("content")
             is_tool_result = isinstance(content, list) and any(
                 isinstance(c, dict) and c.get("type") == "tool_result" for c in content
@@ -464,15 +488,15 @@ def parse_session(
             return []
         return sorted(p.name for p in folder.rglob("*") if p.is_file())
 
-    outputs_names = _file_names(audit_path.parent / "outputs")
-    upload_names = _file_names(audit_path.parent / "uploads")
+    outputs_names = _file_names(artifact_dir / "outputs") if artifact_dir else []
+    upload_names = _file_names(artifact_dir / "uploads") if artifact_dir else []
 
     duration = None
     if meta.get("createdAt") and meta.get("lastActivityAt"):
         duration = (meta["lastActivityAt"] - meta["createdAt"]) / 1000.0
 
     summary = SessionSummary(
-        session_id=meta.get("sessionId") or meta_path.stem,
+        session_id=meta.get("sessionId") or "session",
         title=meta.get("title"),
         intent_seed=truncate(meta.get("initialMessage") or "", 1000) or None,
         model=meta.get("model"),
@@ -511,6 +535,101 @@ def parse_session(
     return summary, turns, rate_limits
 
 
+def parse_session(
+    meta_path: Path, audit_path: Path, workspace_id: str
+) -> tuple[SessionSummary, list[TurnRecord], list[dict[str, Any]]]:
+    """Cowork entry: load the sidecar metadata + audit.jsonl, then build."""
+    meta = load_meta(meta_path)
+    meta.setdefault("sessionId", meta_path.stem)
+    return build_summary(meta, iter_jsonl(audit_path), audit_path.parent, workspace_id)
+
+
+# ── Claude Code source (~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl) ────
+#
+# Claude Code transcripts share the inner message format with cowork audit.jsonl
+# but carry no sidecar metadata file and no outputs/uploads folders. We rebuild
+# an equivalent `meta` dict from the transcript so `build_summary` can be reused.
+
+_CMD_WRAPPER_PREFIXES = ("<command-name>", "<command-message>", "<local-command")
+
+
+def _is_real_user_turn(event: dict[str, Any]) -> bool:
+    """True for a user's own prompt — not a system reminder, sidechain, slash
+    command wrapper, or a wrapped tool_result envelope."""
+    if event.get("type") != "user" or event.get("isMeta") or event.get("isSidechain"):
+        return False
+    content = event.get("message", {}).get("content")
+    if isinstance(content, list) and any(
+        isinstance(c, dict) and c.get("type") == "tool_result" for c in content
+    ):
+        return False
+    text = (extract_user_text(content) or "").lstrip()
+    return bool(text) and not text.startswith(_CMD_WRAPPER_PREFIXES)
+
+
+def build_cc_meta(transcript_path: Path) -> dict[str, Any]:
+    """Assemble a cowork-shaped metadata dict from a Claude Code transcript:
+    title (ai-title), intent (first real user turn), model (first assistant),
+    and createdAt/lastActivityAt as epoch ms (min/max event timestamp)."""
+    title: str | None = None
+    intent: str | None = None
+    model: str | None = None
+    cwd: str | None = None
+    ts_min: int | None = None
+    ts_max: int | None = None
+
+    for event in iter_jsonl(transcript_path):
+        if not isinstance(event, dict):
+            continue
+        etype = event.get("type")
+        if etype == "ai-title" and event.get("aiTitle"):
+            title = event["aiTitle"]
+        cwd = cwd or event.get("cwd")
+        dt = iso_to_dt(event.get("timestamp"))
+        if dt:
+            ms = int(dt.timestamp() * 1000)
+            ts_min = ms if ts_min is None else min(ts_min, ms)
+            ts_max = ms if ts_max is None else max(ts_max, ms)
+        if intent is None and _is_real_user_turn(event):
+            intent = extract_user_text(event.get("message", {}).get("content"))
+        if model is None and etype == "assistant":
+            model = (event.get("message") or {}).get("model")
+
+    return {
+        "sessionId": transcript_path.stem,
+        "title": title,
+        "initialMessage": intent,
+        "model": model,
+        "processName": (cwd.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+                        if cwd else None),
+        "createdAt": ts_min,
+        "lastActivityAt": ts_max,
+    }
+
+
+def parse_claude_code_session(
+    transcript_path: Path, workspace_id: str, meta: dict[str, Any] | None = None
+) -> tuple[SessionSummary, list[TurnRecord], list[dict[str, Any]]]:
+    """Claude Code entry: rebuild meta from the transcript, then build. Excludes
+    sub-agent sidechain turns; has no outputs/uploads artifacts."""
+    meta = meta or build_cc_meta(transcript_path)
+    return build_summary(
+        meta, iter_jsonl(transcript_path), None, workspace_id, skip_sidechain=True
+    )
+
+
+def discover_claude_code_sessions(root: Path) -> Iterable[tuple[Path, str]]:
+    """Yield (transcript_path, workspace_id) for every session under every
+    project folder in ~/.claude/projects."""
+    if not root.exists():
+        return
+    for proj_dir in sorted(root.iterdir()):
+        if not proj_dir.is_dir():
+            continue
+        for transcript in sorted(proj_dir.glob("*.jsonl")):
+            yield transcript, proj_dir.name
+
+
 def write_session(
     out_dir: Path,
     summary: SessionSummary,
@@ -544,8 +663,42 @@ def discover_sessions(root: Path) -> Iterable[tuple[Path, Path, str]]:
                     yield meta, audit, ws_dir.name
 
 
-def main() -> int:
-    targets = parse_target_dates()
+def _iter_parsed(
+    source: str, root: Path, targets: list[date] | None
+) -> Iterator[tuple[SessionSummary, list[TurnRecord], list[dict[str, Any]], bool]]:
+    """Yield (summary, turns, rate_limits, matched) per discovered session for
+    the chosen source. `matched` is False for sessions filtered out by date —
+    surfaced so the caller can count scanned vs matched uniformly."""
+    if source == SOURCE_CLAUDE_CODE:
+        for transcript, ws_id in discover_claude_code_sessions(root):
+            meta = build_cc_meta(transcript)
+            if not session_touches_dates(meta, targets):
+                yield None, None, None, False
+                continue
+            yield (*parse_claude_code_session(transcript, ws_id, meta), True)
+    else:
+        for meta_path, audit_path, ws_id in discover_sessions(root):
+            meta = load_meta(meta_path)
+            if not session_touches_dates(meta, targets):
+                yield None, None, None, False
+                continue
+            yield (*parse_session(meta_path, audit_path, ws_id), True)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Scan Claude session logs -> per-session JSONL.")
+    parser.add_argument(
+        "--source", choices=[SOURCE_COWORK, SOURCE_CLAUDE_CODE], default=SOURCE_COWORK,
+        help="Log source: claude-cowork (Desktop audit.jsonl, default) or claude-code (~/.claude/projects).",
+    )
+    parser.add_argument(
+        "--target-date", default=None, metavar="SPEC",
+        help='Override TARGET_DATE: "" (today), "ALL", "YYYY-MM-DD", or comma-separated dates.',
+    )
+    args = parser.parse_args(argv)
+
+    root = _detect_log_root(args.source)
+    targets = parse_target_dates(args.target_date)
     label = target_label(targets)
     run_ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = DATA_ROOT / f"sessions_{label}_runAt_{run_ts}"
@@ -553,13 +706,11 @@ def main() -> int:
 
     index: list[dict[str, Any]] = []
     scanned = matched = 0
-    for meta_path, audit_path, ws_id in discover_sessions(SOURCE_LOG_ROOT):
+    for summary, turns, rate_limits, ok in _iter_parsed(args.source, root, targets):
         scanned += 1
-        meta = load_meta(meta_path)
-        if not session_touches_dates(meta, targets):
+        if not ok:
             continue
         matched += 1
-        summary, turns, rate_limits = parse_session(meta_path, audit_path, ws_id)
         out_path = write_session(out_dir, summary, turns, rate_limits)
         index.append({
             "session_id": summary.session_id,
@@ -575,9 +726,10 @@ def main() -> int:
 
     (out_dir / "_index.json").write_text(
         json.dumps({
+            "source": args.source,
             "target_date": label,
             "run_at": run_ts,
-            "source_root": str(SOURCE_LOG_ROOT),
+            "source_root": str(root),
             "scanned": scanned,
             "matched": matched,
             "sessions": index,
@@ -585,7 +737,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    print(f"\nDone. {matched}/{scanned} sessions matched {label} -> {out_dir}")
+    print(f"\nDone. {matched}/{scanned} {args.source} sessions matched {label} -> {out_dir}")
     return 0
 
 

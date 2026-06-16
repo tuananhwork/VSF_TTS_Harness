@@ -25,6 +25,7 @@ Pipeline sẽ tự động:
 
 ```
 --sessions-dir PATH        Bỏ qua bước scan, dùng thư mục sessions có sẵn
+--source SOURCE            Nguồn log: 'claude-cowork' (mặc định) hoặc 'claude-code'
 --min-recurrence N         Số lần lặp tối thiểu để coi là pattern (mặc định: 2)
 --max-deepdive N           Số candidate tối đa đưa vào debate (mặc định: 5)
 --llm-provider PROVIDER    'claude' (mặc định) hoặc 'ccs'
@@ -37,13 +38,18 @@ Ví dụ:
 # Dùng CCS thay vì Claude trực tiếp
 uv run e2e.py --llm-provider ccs --ccs-profile one
 
+# Quét log Claude Code CLI thay vì Claude Desktop (cowork)
+uv run e2e.py --source claude-code
+
 # Bỏ qua scan, dùng lại sessions đã có
 uv run e2e.py --sessions-dir data/sessions_2026-06-15_runAt_20260615-103000
 ```
 
 ## Session log ở đâu?
 
-Script tự detect theo OS:
+Pipeline đọc được **2 nguồn** (chọn bằng `--source`); cả hai cùng engine Claude Code nên format `message` giống nhau, chỉ khác lớp vỏ:
+
+**`claude-cowork`** (mặc định) — Claude Desktop, mỗi session 1 cặp `local_<id>.json` + `local_<id>/audit.jsonl`:
 
 | OS      | Đường dẫn tự tìm |
 |---------|-----------------|
@@ -51,10 +57,16 @@ Script tự detect theo OS:
 | macOS   | `~/Library/Application Support/Claude/local-agent-mode-sessions` |
 | Linux   | `~/.config/Claude/local-agent-mode-sessions` |
 
-Nếu log ở chỗ khác, set biến môi trường:
+**`claude-code`** — Claude Code CLI, mỗi session 1 file transcript; quét mọi project, loại sidechain của sub-agent:
+
+| OS  | Đường dẫn tự tìm |
+|-----|-----------------|
+| Mọi OS | `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl` |
+
+Nếu log ở chỗ khác, set biến môi trường (áp cho nguồn đang chọn):
 
 ```bash
-CLAUDE_LOG_ROOT=/path/to/sessions uv run e2e.py
+CLAUDE_LOG_ROOT=/path/to/logs uv run e2e.py --source claude-code
 ```
 
 ## Quét ngày khác

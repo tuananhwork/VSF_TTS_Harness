@@ -39,6 +39,13 @@ def main() -> None:
         "--sessions-dir",
         help="Skip scan.py and use this existing sessions directory instead.",
     )
+    parser.add_argument(
+        "--source",
+        choices=["claude-cowork", "claude-code"],
+        default="claude-cowork",
+        help="Log source for scan.py: 'claude-cowork' (Desktop audit.jsonl, default) "
+             "or 'claude-code' (~/.claude/projects transcripts).",
+    )
     parser.add_argument("--min-recurrence", default="2")
     parser.add_argument("--max-deepdive", default="5")
     parser.add_argument(
@@ -69,7 +76,7 @@ def main() -> None:
     if args.sessions_dir:
         sessions_dir = Path(args.sessions_dir)
     else:
-        _run(sys.executable, "scripts/scan.py")
+        _run(sys.executable, "scripts/scan.py", "--source", args.source)
         sessions_dir = _latest("sessions_*_runAt_*")
     print(f"[e2e] sessions: {sessions_dir}")
 

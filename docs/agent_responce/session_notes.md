@@ -67,6 +67,28 @@ rate_limit_event, image, base64, direct
 Mỗi dòng có `_audit_timestamp` + `_audit_hmac` → có thể audit toàn vẹn.
 **Lưu ý:** `assistant` và `message` đôi khi cùng nội dung — phải dedupe bằng `uuid`.
 
+### 2.5 Hai nguồn log — `claude-cowork` & `claude-code`
+
+`scan.py --source` đọc được 2 nguồn. Cùng engine Claude Code nên **format `message`
+giống hệt** (assistant `content[]` thinking/text/tool_use + `usage`; user `tool_result`)
+→ lõi `build_summary()` dùng chung. Chỉ khác **lớp vỏ** (discovery + metadata):
+
+| Khía cạnh | `claude-cowork` (mặc định) | `claude-code` |
+| --------- | -------------------------- | ------------- |
+| Vị trí | `local-agent-mode-sessions/<user>/<ws>/local_<id>/audit.jsonl` | `~/.claude/projects/<encoded-cwd>/<sid>.jsonl` |
+| Metadata | file `local_<id>.json` riêng | dựng từ transcript (`build_cc_meta`) |
+| `title` | `meta.title` | dòng `type:"ai-title"` → `aiTitle` |
+| `intent_seed` | `meta.initialMessage` | user-turn thật đầu (bỏ `<command-*>` + `isMeta`) |
+| `model` | `meta.model` | `assistant.message.model` |
+| `created/last` | `meta.createdAt/lastActivityAt` (ms) | min/max `timestamp` ISO → ms |
+| timestamp/dòng | `_audit_timestamp` (+`_audit_hmac`) | `timestamp` ISO (không HMAC) |
+| sub-agent | `parent_tool_use_id` | `isSidechain` → **loại bỏ** khi mining |
+| outputs/uploads | thư mục `outputs/`,`uploads/` | không có → rỗng |
+| cwd/branch | sandbox cwd | `cwd` + `gitBranch` thật (signal tốt hơn) |
+
+Code: `build_cc_meta`, `parse_claude_code_session`, `discover_claude_code_sessions`
+trong `scripts/scan.py`; entry cowork `parse_session` giữ nguyên.
+
 ---
 
 ## 3. Field đã chọn để feed LLM-judge
