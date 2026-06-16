@@ -1,16 +1,16 @@
-"""Lượt 3 — Skill synthesis with skill-creator headless + template fallback.
+"""Lượt 3 — Skill synthesis.
+
+For each top-N accepted candidate:
+  1. render_skill (LLM, the one reasoning call) → English skill content as JSON.
+  2. assemble_skill (code) → deterministic skill folder (SKILL.md, references/,
+     scripts/ stubs, golden_tests.md, evidence/<time>_<hash>/).
+  3. validate_skill (code) → quality gate; problems surface in PROPOSAL.md.
+
+Writes PROPOSAL.md + accept.py under data/skills_<date>_proposal/.
 
 Usage:
     python scripts/synth.py --candidates data/judge_<date>/candidate_skills.json \\
         [--top 3] [--timeout 120]
-
-For each top-N accepted candidate:
-- Path A: ask `ccs one -p` to use the skill-creator skill, output to a per-skill
-  folder. If SKILL.md exists after the call, mark synth_path = "A".
-- Path B: if A fails (timeout or no file), fall back to a smaller `ccs one -p`
-  call that fills the Jinja templates with steps + 3 golden tests.
-
-Writes PROPOSAL.md + accept.py under data/skills_<date>_proposal/.
 """
 
 from __future__ import annotations
@@ -25,79 +25,17 @@ import click
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _lib.claude_runner import (  # noqa: E402
-    ClaudeRunError,
-    run_claude,
-    run_claude_json,
-)
-from _lib.candidate_schema import slugify_skill_name  # noqa: E402
-from _lib.render_proposal import build_skill_description, render_skill_dir  # noqa: E402
+from datetime import datetime  # noqa: E402
+
+from _lib.candidate_schema import normalize_skill_name  # noqa: E402
+from _lib.skill_render import render_skill  # noqa: E402
+from _lib.skill_assemble import assemble_skill  # noqa: E402
+from _lib.skill_validate import validate_skill  # noqa: E402
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_ROOT = PROJECT_ROOT / "data"
 SCRIPTS_DIR = Path(__file__).resolve().parent
-
-
-def _path_a_prompt(candidate: dict, skill_dir: Path) -> str:
-    skill_type = candidate.get("skill_type", "process_macro")
-    name = skill_dir.name
-    description = build_skill_description(candidate)
-    return f"""Use the skill-creator skill. Create a new skill with these inputs.
-
-NAME: {name}
-DESCRIPTION: {description}
-SKILL_TYPE: {skill_type}
-TRIGGER (VI): {candidate['trigger_intent']['vi']}
-TRIGGER (EN): {candidate['trigger_intent']['en']}
-BEHAVIOR_CLASS: {candidate.get('behavior_class', 'process')}
-ACTION_TEMPLATE_JSON (ordered flow): {json.dumps(candidate.get('action_template', []), ensure_ascii=False)}
-GOOD_POINTS: {json.dumps(candidate.get('good_points', []), ensure_ascii=False)}
-WEAK_POINTS: {json.dumps(candidate.get('weak_points', []), ensure_ascii=False)}
-IMPROVEMENT_NOTES: {candidate.get('improvement_notes', '')}
-EVIDENCE_SESSION_IDS: {", ".join(candidate.get('evidence', {}).get('session_ids', []))}
-RISK_FLAGS: {", ".join(candidate.get('risk_flags', []))}
-
-OUTPUT FOLDER (absolute): {skill_dir}
-
-Requirements:
-- Write SKILL.md whose YAML frontmatter conforms to the Agent Skills spec
-  (https://agentskills.io/specification). The frontmatter MUST have exactly two
-  required keys at the top level — `name` and `description` — plus an optional
-  `metadata:` block. Do NOT put any other keys at the top level.
-  - `name`: use exactly `{name}` (it already matches this output folder; lowercase
-    letters/digits/hyphens only, no underscores).
-  - `description`: a single string (<= 1024 chars) stating what the skill does and
-    when to use it. Use this value verbatim: {description}
-  - Put `skill_type`, `behavior_class`, and `risk_flags` under `metadata:` as
-    string values — never as top-level frontmatter keys.
-- If SKILL_TYPE is process_macro: document the ordered flow (step 1→2→3→4) from
-  ACTION_TEMPLATE_JSON so the user can re-run it quickly.
-- If SKILL_TYPE is improvement_lesson: centre the skill on WEAK_POINTS +
-  IMPROVEMENT_NOTES — what went wrong last time and what to do first next time
-  to avoid it. Keep the flow as supporting context.
-- Write golden_tests.md with 3 test cases derived from evidence.
-- Create scripts/ folder if action has deterministic steps; otherwise omit it.
-- If risk_flags include write_action or deletes_files, the skill must include
-  an explicit confirm step before any side-effect tool call.
-"""
-
-
-def _path_b_fill_prompt(candidate: dict) -> str:
-    return f"""Given this skill candidate JSON, produce ONLY the values that
-fill a Jinja2 template (no prose, no markdown fences, return JSON):
-
-CANDIDATE:
-{json.dumps(candidate, ensure_ascii=False, indent=2)}
-
-Output STRICT JSON with shape:
-{{
-  "steps_markdown": "<markdown bullet list of 3-5 numbered steps>",
-  "golden_test_1": {{"query": "...", "expected": "..."}},
-  "golden_test_2": {{"query": "...", "expected": "..."}},
-  "golden_test_3": {{"query": "...", "expected": "..."}}
-}}
-"""
 
 
 def _emit_accept_py(out_dir: Path, skill_names: list[str]) -> None:
@@ -171,26 +109,20 @@ if __name__ == "__main__":
     (out_dir / "accept.py").write_text(script, encoding="utf-8")
 
 
-def _synthesize_one(candidate: dict, out_dir: Path, timeout: float) -> str:
-    """Returns synth_path: 'A' or 'B'."""
-    skill_dir = out_dir / slugify_skill_name(candidate["name"])
-    skill_dir.mkdir(parents=True, exist_ok=True)
-    today = _date.today().isoformat()
-
-    try:
-        run_claude(_path_a_prompt(candidate, skill_dir), timeout=timeout)
-    except ClaudeRunError as e:
-        click.echo(f"  ! Path A failed for {candidate['name']}: {e}")
-    if (skill_dir / "SKILL.md").exists():
-        return "A"
-
-    click.echo(f"  -> falling back to Path B for {candidate['name']}")
-    filled = run_claude_json(_path_b_fill_prompt(candidate), timeout=min(60.0, timeout))
-    render_skill_dir(
-        candidate=candidate, filled=filled,
-        output_dir=out_dir, generated_on=today,
+def _synthesize_one(
+    candidate: dict, batch_names: list[str], out_dir: Path, timeout: float,
+    now: datetime,
+) -> dict:
+    """Render (LLM) → assemble (code) → validate (code). Returns candidate plus
+    the quality-gate result under `synth_problems`."""
+    rendered = render_skill(candidate, batch_names, timeout=timeout)
+    skill_dir = assemble_skill(
+        candidate=candidate, rendered=rendered, output_dir=out_dir, now=now,
     )
-    return "B"
+    problems = validate_skill(skill_dir)
+    if problems:
+        click.echo(f"  ! quality gate flagged {skill_dir.name}: {'; '.join(problems)}")
+    return {**candidate, "synth_problems": problems}
 
 
 @click.command()
@@ -208,16 +140,15 @@ def main(candidates_path: Path, top: int, timeout: float) -> None:
 
     all_candidates = json.loads(candidates_path.read_text(encoding="utf-8"))
     accepted = [c for c in all_candidates if not c.get("rejected_reason")]
-    top_n = accepted[:top]
+    top_n = [normalize_skill_name(c) for c in accepted[:top]]
+    batch_names = [c["name"] for c in top_n]
     click.echo(f"[synth] {len(top_n)} candidates to synthesize")
 
+    now = datetime.now()
     results: list[dict] = []
     for c in top_n:
-        # Canonicalize the name once so the folder, accept.py, and PROPOSAL all agree.
-        c = {**c, "name": slugify_skill_name(c["name"])}
         click.echo(f"[synth] -> {c['name']}")
-        synth_path = _synthesize_one(c, out_dir, timeout)
-        results.append({**c, "synth_path": synth_path})
+        results.append(_synthesize_one(c, batch_names, out_dir, timeout, now))
 
     # Save sidecar meta and emit accept.py
     (out_dir / "_proposal_meta.json").write_text(
@@ -225,7 +156,7 @@ def main(candidates_path: Path, top: int, timeout: float) -> None:
     )
     _emit_accept_py(out_dir, [c["name"] for c in results])
 
-    # Render PROPOSAL.md
+    # Render PROPOSAL.md + a deterministic quality-gate section.
     from _lib.render_proposal import render_pattern_report
     proposal_md = render_pattern_report(
         date=today,
@@ -234,6 +165,12 @@ def main(candidates_path: Path, top: int, timeout: float) -> None:
         clusters=[],
         candidates=results,
     )
+    gate_lines = [
+        f"- `{c['name']}`: " + ("OK" if not c.get("synth_problems")
+                                 else "; ".join(c["synth_problems"]))
+        for c in results
+    ]
+    proposal_md += "\n## Synth quality gate\n\n" + "\n".join(gate_lines) + "\n"
     (out_dir / "PROPOSAL.md").write_text(proposal_md, encoding="utf-8")
     click.echo(f"[synth] done -> {out_dir}")
 
