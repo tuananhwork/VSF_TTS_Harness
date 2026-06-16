@@ -41,7 +41,10 @@ uv run python scripts/judge.py \
 Hai lượt:
 - **Triage** (LLM, trên summary + `tool_sequence` + `intent_seeds`): gom task lặp
   lại, gắn `skill_type` (`process_macro` | `improvement_lesson`).
-- **Recurrence guard** (code): loại candidate có < `min-recurrence` session.
+- **Recompute metric** (code, sau triage): tính lại recurrence/repeat_rate/pivot_rate
+  trên đúng tập `evidence.session_ids` mà LLM đã merge — số này (không phải tool-ngram
+  pre-group) là số thật cho guard + consolidator; session_id bịa bị loại và ghi cờ.
+- **Recurrence guard** (code): loại candidate có recurrence (đã verify) < `min-recurrence`.
 - **Pass 2 — debate** (Cách B, trên full trace của từng candidate, xem
   `docs/products/agent-debate.md`), gồm 3 bước:
   - **Extract** (LLM trung lập): trích flow **có thứ tự** + điểm tốt / chưa tốt /
