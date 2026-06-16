@@ -6,27 +6,6 @@ from typing import Any
 
 from jinja2 import Environment
 
-from _lib.candidate_schema import slugify_skill_name
-
-
-_DESCRIPTION_MAX = 1024
-
-
-def build_skill_description(candidate: dict[str, Any]) -> str:
-    """Build a spec-valid `description` string from a candidate.
-
-    The Agent Skills spec wants a single non-empty string (<= 1024 chars) that
-    says both what the skill does and when to use it. We compose it from the
-    bilingual `trigger_intent`, leading with the English trigger (keyword-rich
-    for matching) and appending the Vietnamese one after `Dùng khi:`.
-    """
-    trigger = candidate.get("trigger_intent") or {}
-    en = (trigger.get("en") or "").strip().rstrip(".")
-    vi = (trigger.get("vi") or "").strip()
-    parts = [p for p in (en, f"Dùng khi: {vi}" if vi else "") if p]
-    desc = ". ".join(parts).strip() or candidate.get("name", "skill")
-    return desc[:_DESCRIPTION_MAX]
-
 
 _env = Environment(
     autoescape=False,
@@ -141,61 +120,3 @@ def render_pattern_report(
         accepted=accepted,
         rejected=rejected,
     )
-
-
-from pathlib import Path
-
-from jinja2 import FileSystemLoader
-
-
-_TEMPLATES_DIR = Path(__file__).parent / "synth_templates"
-_file_env = Environment(
-    loader=FileSystemLoader(str(_TEMPLATES_DIR)),
-    autoescape=False,
-    trim_blocks=True,
-    lstrip_blocks=True,
-    keep_trailing_newline=True,
-)
-
-
-def render_skill_dir(
-    *,
-    candidate: dict[str, Any],
-    filled: dict[str, Any],
-    output_dir: Path,
-    generated_on: str,
-) -> Path:
-    """Render Path B fallback skill folder: SKILL.md + golden_tests.md.
-
-    `candidate` is one element from candidate_skills.json; `filled` is the LLM
-    template-fill output (steps + 3 golden tests).
-    """
-    name = slugify_skill_name(candidate["name"])
-    skill_dir = output_dir / name
-    skill_dir.mkdir(parents=True, exist_ok=True)
-    ctx = {
-        "name": name,
-        "description": build_skill_description(candidate),
-        "skill_type": candidate.get("skill_type", "process_macro"),
-        "trigger_vi": candidate["trigger_intent"]["vi"],
-        "trigger_en": candidate["trigger_intent"]["en"],
-        "behavior_class": candidate.get("behavior_class", "process"),
-        "risk_flags": candidate.get("risk_flags") or [],
-        "evidence_session_ids": candidate.get("evidence", {}).get("session_ids", []),
-        "action_template": candidate.get("action_template") or [],
-        "good_points": candidate.get("good_points") or [],
-        "weak_points": candidate.get("weak_points") or [],
-        "improvement_notes": candidate.get("improvement_notes") or "",
-        "generated_on": generated_on,
-        "steps_markdown": filled["steps_markdown"],
-        "golden_test_1": filled["golden_test_1"],
-        "golden_test_2": filled["golden_test_2"],
-        "golden_test_3": filled["golden_test_3"],
-    }
-    (skill_dir / "SKILL.md").write_text(
-        _file_env.get_template("SKILL.md.j2").render(**ctx), encoding="utf-8"
-    )
-    (skill_dir / "golden_tests.md").write_text(
-        _file_env.get_template("golden_tests.md.j2").render(**ctx), encoding="utf-8"
-    )
-    return skill_dir
