@@ -41,7 +41,7 @@ uv run python scripts/judge.py \
 Hai lượt:
 - **Triage** (LLM, trên summary + `tool_sequence` + `intent_seeds`): gom task lặp
   lại, gắn `skill_type` (`process_macro` | `improvement_lesson`).
-- **Recompute metric** (code, sau triage): tính lại recurrence/repeat_rate/pivot_rate
+- **Recompute metric** (code, sau triage): tính lại recurrence/repeat_rate/failure_rate
   trên đúng tập `evidence.session_ids` mà LLM đã merge — số này (không phải tool-ngram
   pre-group) là số thật cho guard + consolidator; session_id bịa bị loại và ghi cờ.
 - **Recurrence guard** (code): loại candidate có recurrence (đã verify) < `min-recurrence`.
@@ -63,7 +63,7 @@ Output: `data/judge_<date>/{cluster_summary.json, pattern_report.md, candidate_s
 
 Hai loại skill sinh ra:
 - **process_macro**: đóng gói flow tốt hay lặp lại để gọi lại nhanh.
-- **improvement_lesson**: bài học từ session lắm repeat/pivot — "lần sau làm X
+- **improvement_lesson**: bài học từ session lắm rework/failure — "lần sau làm X
   trước để tránh Y".
 
 ### 3) Synth — sinh skill draft + proposal

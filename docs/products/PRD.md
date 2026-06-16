@@ -109,7 +109,7 @@ Xem `docs/data_goal.md` cho bảng đầy đủ. Tóm tắt:
 | L3 Action atom | `tool_name`, `mcp_server`, `input_summary`, `result_ok`                    |
 | L4 Workflow    | `turn.idx` + `turn.actions[]` giữ thứ tự gốc                               |
 | L5 Context/Env | `model`, `user_selected_folders`, `process_name`                           |
-| L6 Feedback    | `feedback_flag ∈ {pivot, repeat}` + counters (cấu trúc, không keyword)      |
+| L6 Feedback    | `repeat` (rework sau fail) + `failure_count` (result_ok=False), không keyword |
 | L7 Outcome     | `input/output_tokens`, `rate_limit_hits`, `outputs_produced`, `tool_usage` |
 
 ### 5.3 Test run 2026-06-12
@@ -135,8 +135,8 @@ Toàn bộ JSONL của 1 user trong cửa sổ Δt (mặc định: 7 ngày).
 | Loại                       | Tín hiệu trong JSONL                                                                 |
 | -------------------------- | ------------------------------------------------------------------------------------ |
 | **Chốt decisions**         | Pattern `user_text` xác nhận → assistant `tool_use` có side-effect (write/delete)    |
-| **Kém hiệu quả / lỗi lặp** | `feedback_flag = repeat` cao (cùng tool-name chạy lại ≤ 60s); action `result_ok=False` |
-| **Nhận thức hệ thống kém** | `user_text` dài bất thường / lặp prompt; `intent_seed` mơ hồ → nhiều turn `pivot`     |
+| **Kém hiệu quả / lỗi lặp** | `repeat` cao (rework: chạy lại tool VỪA FAIL ≤ 60s) và/hoặc `failure_count` cao   |
+| **Nhận thức hệ thống kém** | `user_text` dài bất thường / lặp prompt; `intent_seed` mơ hồ; nhiều action fail     |
 | **Điều phối quy trình**    | Chuỗi `tool_use` ổn định ≥ N lần qua các session, kèm `success_check` (kết quả ok)   |
 
 ### 6.3 3 trục đánh giá khi rút pattern (từ `data_goal.md`)
@@ -152,7 +152,7 @@ Toàn bộ JSONL của 1 user trong cửa sổ Δt (mặc định: 7 ngày).
    ↓
 A. Aggregator (deterministic Python)
    - Gom theo intent_seed/title bằng embedding clustering
-   - Tính frequency, repeat_rate, pivot_rate, avg_duration mỗi cluster
+   - Tính frequency, repeat_rate, failure_rate, avg_duration mỗi cluster
    - Loại cluster size < threshold
    ↓
 B. Judge LLM (Claude headless / Cowork session)
