@@ -9,10 +9,12 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-# Thêm scripts/ vào path để import scan, judge, synth
-_SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
-if str(_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS))
+# Thêm scripts/ vào path để import scan, judge, synth (chỉ cần trong dev mode;
+# trong frozen .exe PyInstaller đã bundle tất cả vào sys._MEIPASS)
+if not getattr(sys, "frozen", False):
+    _SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
+    if str(_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(_SCRIPTS))
 
 import scan as _scan
 import judge as _judge

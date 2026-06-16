@@ -3,10 +3,10 @@
 
 a = Analysis(
     ['C:\\Users\\chuba\\Workspace\\VSF\\Pattern\\gui\\app.py'],
-    pathex=[],
+    pathex=['C:\\Users\\chuba\\Workspace\\VSF\\Pattern\\scripts', 'C:\\Users\\chuba\\Workspace\\VSF\\Pattern\\gui'],
     binaries=[],
-    datas=[('C:\\Users\\chuba\\Workspace\\VSF\\Pattern\\scripts\\_lib', 'scripts/_lib'), ('C:\\Users\\chuba\\Workspace\\VSF\\Pattern\\gui', 'gui')],
-    hiddenimports=[],
+    datas=[],
+    hiddenimports=['scan', 'judge', 'synth', '_lib.aggregator', '_lib.candidate_schema', '_lib.claude_runner', '_lib.debate', '_lib.judge_prompts', '_lib.render_proposal', '_lib.skill_assemble', '_lib.skill_render', '_lib.skill_validate', '_lib.trace_loader'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
