@@ -1,109 +1,94 @@
-# Pattern — Behavior → Skill harness for Claude Cowork (MVP)
+# Pattern — Behavior → Skill harness for Claude Cowork
 
 Quan sát hành vi user trên Claude Cowork → đề xuất Skill draft cá nhân hoá.
-Spec: `docs/superpowers/specs/2026-06-13-pattern-end-to-end-design.md`.
 
 ## Yêu cầu
 
-- Python 3.12+, `uv`
-- LLM provider chọn qua biến môi trường `LLM_PROVIDER`:
-  - `CCS_ONE` (mặc định) — LLM call đi qua `ccs one -p` (profile `one`). `ccs`
-    (Claude Code Switch) phải có trên `PATH`. `ccs` tự delegate tới `claude` nên
-    Claude Code CLI cũng phải cài sẵn trên `PATH`. `claude_runner.py` tự inject
-    `CCS_CLAUDE_PATH` (lấy từ `shutil.which("claude")`) vào subprocess ccs, nên
-    không cần set tay — kể cả trên Windows nơi ccs mặc định dò claude bằng
-    `command -v` (lỗi trên cmd.exe).
-  - `CLAUDE` — gọi thẳng `claude -p` (Claude Code headless), bỏ qua ccs. Chỉ cần
-    `claude` trên `PATH`. Giá trị không phân biệt hoa thường và chấp nhận
-    khoảng trắng/gạch nối (`CCS ONE`, `ccs-one`).
-- Đã có session log Claude Cowork trên máy
+- Python 3.12+, [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+- Claude Code CLI (`claude`) đã đăng nhập, có trên `PATH`
+- Đã có session log Claude Cowork trên máy (tự động tìm — xem bên dưới)
 
-## Cài đặt
+## Chạy toàn bộ pipeline (1 lệnh)
+
+```bash
+uv run e2e.py
+```
+
+Pipeline sẽ tự động:
+1. Cài dependencies (`uv sync`)
+2. **Scan** — quét session log Claude hôm nay
+3. **Judge** — LLM phân tích pattern hành vi
+4. **Synth** — sinh Skill draft
+5. **Accept** — chọn Skill muốn cài (interactive)
+
+### Tuỳ chọn
+
+```
+--sessions-dir PATH        Bỏ qua bước scan, dùng thư mục sessions có sẵn
+--min-recurrence N         Số lần lặp tối thiểu để coi là pattern (mặc định: 2)
+--max-deepdive N           Số candidate tối đa đưa vào debate (mặc định: 5)
+--llm-provider PROVIDER    'claude' (mặc định) hoặc 'ccs'
+--ccs-profile NAME         Tên CCS profile (bắt buộc khi dùng --llm-provider=ccs)
+```
+
+Ví dụ:
+
+```bash
+# Dùng CCS thay vì Claude trực tiếp
+uv run e2e.py --llm-provider ccs --ccs-profile one
+
+# Bỏ qua scan, dùng lại sessions đã có
+uv run e2e.py --sessions-dir data/sessions_2026-06-15_runAt_20260615-103000
+```
+
+## Session log ở đâu?
+
+Script tự detect theo OS:
+
+| OS      | Đường dẫn tự tìm |
+|---------|-----------------|
+| Windows | `~/AppData/Local/Packages/Claude_*/LocalCache/Roaming/Claude/local-agent-mode-sessions` |
+| macOS   | `~/Library/Application Support/Claude/local-agent-mode-sessions` |
+| Linux   | `~/.config/Claude/local-agent-mode-sessions` |
+
+Nếu log ở chỗ khác, set biến môi trường:
+
+```bash
+CLAUDE_LOG_ROOT=/path/to/sessions uv run e2e.py
+```
+
+## Quét ngày khác
+
+Mở `scripts/scan.py`, đổi `TARGET_DATE` ở đầu file:
+
+| Giá trị | Ý nghĩa |
+|---------|---------|
+| `""` (bỏ trống) | Hôm nay |
+| `"ALL"` | Tất cả session |
+| `"2026-06-15"` | Đúng 1 ngày |
+| `"2026-06-14, 2026-06-15"` | Nhiều ngày |
+
+## Chạy từng bước thủ công
 
 ```bash
 uv sync
-```
 
-## Pipeline 3 bước
-
-### 1) Scan — trích session JSONL từ log Claude Desktop
-
-```bash
+# 1. Scan
 uv run python scripts/scan.py
-```
 
-Đổi `TARGET_DATE` trong `scripts/scan.py`: bỏ trống = hôm nay, `ALL` = tất cả,
-`YYYY-MM-DD` = 1 ngày, hoặc nhiều ngày cách nhau bởi dấu phẩy.
-Output: `data/sessions_<label>_runAt_<runTs>/` (`<label>` = `ALL` / ngày / `d1+d2`).
-
-### 2) Judge — triage → multi-judge debate → candidate skills
-
-```bash
+# 2. Judge
 uv run python scripts/judge.py \
-    --sessions-dir data/sessions_<date>_runAt_<runTs> \
+    --sessions-dir data/sessions_<label>_runAt_<ts> \
     --top-candidates 5 --min-recurrence 2 --max-deepdive 5
-```
 
-Hai lượt:
-- **Triage** (LLM, trên summary + `tool_sequence` + `intent_seeds`): gom task lặp
-  lại, gắn `skill_type` (`process_macro` | `improvement_lesson`).
-- **Recompute metric** (code, sau triage): tính lại recurrence/repeat_rate/failure_rate
-  trên đúng tập `evidence.session_ids` mà LLM đã merge — số này (không phải tool-ngram
-  pre-group) là số thật cho guard + consolidator; session_id bịa bị loại và ghi cờ.
-- **Recurrence guard** (code): loại candidate có recurrence (đã verify) < `min-recurrence`.
-- **Pass 2 — debate** (Cách B, trên full trace của từng candidate, xem
-  `docs/products/agent-debate.md`), gồm 3 bước:
-  - **Extract** (LLM trung lập): trích flow **có thứ tự** + điểm tốt / chưa tốt /
-    cải tiến / golden tests — không chấm điểm, không quyết định.
-  - **Debate** (N judge chạy **song song**, mỗi judge chấm 1 trục giá trị): MVP có
-    Năng suất + Chất lượng; mỗi judge trả `{stance, axis_score, argument}`. Một judge
-    lỗi không làm hỏng candidate (ghi `error`).
-  - **Consolidate** (LLM): tổng hợp các verdict → `final_score` + `rejected_reason`
-    + `consolidator_note`; được phép bác dù judge đồng thuận.
-
-Chi phí mỗi candidate: `1 (extract) + N (judges) + 1 (consolidate)` call; số candidate
-đã bị cap bởi `--max-deepdive`.
-
-Output: `data/judge_<date>/{cluster_summary.json, pattern_report.md, candidate_skills.json}`
-(kèm `_raw_extract_*`, `_raw_debate_*`, `_raw_consolidate_*` để debug).
-
-Hai loại skill sinh ra:
-- **process_macro**: đóng gói flow tốt hay lặp lại để gọi lại nhanh.
-- **improvement_lesson**: bài học từ session lắm rework/failure — "lần sau làm X
-  trước để tránh Y".
-
-### 3) Synth — sinh skill draft + proposal
-
-```bash
+# 3. Synth
 uv run python scripts/synth.py \
     --candidates data/judge_<date>/candidate_skills.json \
-    --top 3 --timeout 120
-```
+    --top 3 --timeout 300
 
-Mỗi accepted candidate đi qua 2 stage:
-- **render_skill** (LLM, 1 call): dịch candidate (VI) → nội dung skill **English**
-  (description, capabilities, red flags, golden tests). Đây là phần cần reasoning.
-- **assemble_skill** (code, deterministic): dựng folder skill:
-  - `SKILL.md` — **chỉ chỉ dẫn**, English; 1 năng lực → flow inline, nhiều năng lực
-    → index + `references/<slug>.md` mỗi năng lực.
-  - `scripts/<name>` — stub trung thực cho bước deterministic (không bịa logic).
-  - `evidence/<time>_<hash>/evidence.md` — toàn bộ provenance (session_ids,
-    good/weak/improvement gốc, debate, metrics). **Không** nằm trong SKILL.md.
-  - `golden_tests.md`.
-- **validate_skill** (code): quality gate — frontmatter đúng 3 key, name==folder,
-  không leak birth-history, references khớp index. Vi phạm được cờ trong
-  `## Synth quality gate` của PROPOSAL.md.
-
-Output: `data/skills_<date>_proposal/{PROPOSAL.md, accept.py, <skill-name>/...}`.
-`accept.py` copy nguyên folder skill **kèm** `evidence/`.
-
-### 4) Accept — cài skill bạn duyệt
-
-```bash
+# 4. Accept
 python data/skills_<date>_proposal/accept.py
 ```
-
-Hoặc non-interactive: `python ... accept.py 1 3`.
 
 ## Tests
 
@@ -114,7 +99,6 @@ uv run pytest
 ## Tài liệu
 
 - PRD: `docs/products/PRD.md`
-- Schema 7 lớp field: `docs/agent_responce/data_goal.md`
-- Lượt 1 implementation notes: `docs/agent_responce/session_notes.md`
 - Design spec: `docs/superpowers/specs/2026-06-13-pattern-end-to-end-design.md`
-- Implementation plan: `docs/superpowers/plans/2026-06-13-pattern-end-to-end-pipeline.md`
+- Schema field: `docs/agent_responce/data_goal.md`
+- Agent debate: `docs/products/agent-debate.md`
