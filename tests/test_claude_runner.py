@@ -10,6 +10,7 @@ import pytest
 
 from _lib.claude_runner import (
     ClaudeRunError,
+    _provider,
     _strip_ccs_wrapper,
     extract_json_block,
     run_claude,
@@ -69,6 +70,55 @@ def test_strip_ccs_wrapper_passthrough_plain() -> None:
     assert _strip_ccs_wrapper("just text\nmore") == "just text\nmore"
 
 
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (None, "CCS_ONE"),
+        ("", "CCS_ONE"),
+        ("   ", "CCS_ONE"),
+        ("CCS_ONE", "CCS_ONE"),
+        ("ccs one", "CCS_ONE"),
+        ("CCS-ONE", "CCS_ONE"),
+        ("CLAUDE", "CLAUDE"),
+        ("claude", "CLAUDE"),
+    ],
+)
+def test_provider_resolution(value, expected) -> None:
+    env = {} if value is None else {"LLM_PROVIDER": value}
+    with patch.dict("os.environ", env, clear=True):
+        assert _provider() == expected
+
+
+@patch.dict("os.environ", {"LLM_PROVIDER": "bogus"}, clear=True)
+def test_provider_rejects_unknown_value() -> None:
+    with pytest.raises(ClaudeRunError, match="LLM_PROVIDER"):
+        _provider()
+
+
+@patch.dict("os.environ", {"LLM_PROVIDER": "CLAUDE"}, clear=True)
+@patch("_lib.claude_runner.shutil.which", return_value="/fake/claude")
+@patch("_lib.claude_runner.subprocess.run")
+def test_run_claude_uses_claude_cli_when_provider_is_claude(
+    mock_run, _mock_which
+) -> None:
+    mock_run.return_value = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout="hello", stderr=""
+    )
+    assert run_claude("prompt", timeout=10) == "hello"
+    cmd = mock_run.call_args[0][0]
+    assert cmd == ["/fake/claude", "-p", "prompt"]
+
+
+@patch.dict("os.environ", {"LLM_PROVIDER": "CLAUDE"}, clear=True)
+@patch("_lib.claude_runner.shutil.which", return_value=None)
+@patch("_lib.claude_runner.subprocess.run")
+def test_run_claude_raises_when_claude_cli_missing(mock_run, _mock_which) -> None:
+    with pytest.raises(ClaudeRunError, match="claude CLI not found"):
+        run_claude("prompt", timeout=10)
+    mock_run.assert_not_called()
+
+
+@patch.dict("os.environ", {}, clear=True)
 @patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
 def test_run_claude_returns_stripped_stdout(mock_run, _mock_cmd) -> None:

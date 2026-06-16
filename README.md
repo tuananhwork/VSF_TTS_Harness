@@ -6,11 +6,16 @@ Spec: `docs/superpowers/specs/2026-06-13-pattern-end-to-end-design.md`.
 ## Yêu cầu
 
 - Python 3.12+, `uv`
-- `ccs` (Claude Code Switch) có sẵn trên `PATH` — LLM call đi qua `ccs one -p`
-  (profile `one`). `ccs` tự delegate tới `claude` nên Claude Code CLI cũng phải
-  cài sẵn trên `PATH`. `claude_runner.py` tự inject `CCS_CLAUDE_PATH` (lấy từ
-  `shutil.which("claude")`) vào subprocess ccs, nên không cần set tay — kể cả
-  trên Windows nơi ccs mặc định dò claude bằng `command -v` (lỗi trên cmd.exe).
+- LLM provider chọn qua biến môi trường `LLM_PROVIDER`:
+  - `CCS_ONE` (mặc định) — LLM call đi qua `ccs one -p` (profile `one`). `ccs`
+    (Claude Code Switch) phải có trên `PATH`. `ccs` tự delegate tới `claude` nên
+    Claude Code CLI cũng phải cài sẵn trên `PATH`. `claude_runner.py` tự inject
+    `CCS_CLAUDE_PATH` (lấy từ `shutil.which("claude")`) vào subprocess ccs, nên
+    không cần set tay — kể cả trên Windows nơi ccs mặc định dò claude bằng
+    `command -v` (lỗi trên cmd.exe).
+  - `CLAUDE` — gọi thẳng `claude -p` (Claude Code headless), bỏ qua ccs. Chỉ cần
+    `claude` trên `PATH`. Giá trị không phân biệt hoa thường và chấp nhận
+    khoảng trắng/gạch nối (`CCS ONE`, `ccs-one`).
 - Đã có session log Claude Cowork trên máy
 
 ## Cài đặt

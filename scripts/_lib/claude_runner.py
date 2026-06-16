@@ -1,15 +1,22 @@
-"""Thin wrapper around `ccs one -p` headless calls.
+"""Thin wrapper around headless LLM calls.
 
-LLM calls are routed through the CCS delegation CLI (`ccs one`) rather than
-invoking `claude` directly, so they use the configured "one" profile. CCS wraps
-task output in a formatted box (round header + info table + footer); the box is
-peeled off by `_strip_ccs_wrapper` so the delegated task's raw stdout can be
-JSON-parsed.
+The LLM provider is selected by the ``LLM_PROVIDER`` environment variable:
+
+- ``CCS_ONE`` (default) — route through the CCS delegation CLI (`ccs one -p`),
+  using the configured "one" profile. CCS wraps task output in a formatted box
+  (round header + info table + footer); the box is peeled off by
+  `_strip_ccs_wrapper` so the delegated task's raw stdout can be JSON-parsed.
+- ``CLAUDE`` — invoke the `claude` CLI directly in headless mode (`claude -p`),
+  bypassing CCS entirely. Output is plain stdout (no wrapper box).
+
+The value is case-insensitive and tolerates spaces/hyphens (`CCS ONE`,
+`ccs-one` all resolve to ``CCS_ONE``).
 
 Owns:
-- subprocess invocation with timeout (`ccs one -p`)
+- provider selection from ``LLM_PROVIDER``
+- subprocess invocation with timeout (`ccs one -p` or `claude -p`)
 - non-zero exit detection
-- stripping the CCS result-formatter box from stdout
+- stripping the CCS result-formatter box from stdout (no-op for plain output)
 - best-effort JSON block extraction from prose-padded output
 - one self-heal retry when JSON parsing fails
 
@@ -29,6 +36,32 @@ from typing import Any
 
 CCS_BIN = "ccs"
 CCS_PROFILE = "one"
+CLAUDE_BIN = "claude"
+
+LLM_PROVIDER_ENV = "LLM_PROVIDER"
+PROVIDER_CLAUDE = "CLAUDE"
+PROVIDER_CCS_ONE = "CCS_ONE"
+
+
+def _provider() -> str:
+    """Resolve the LLM provider from ``LLM_PROVIDER`` (default ``CCS_ONE``).
+
+    Case-insensitive; spaces and hyphens are normalized (`CCS ONE`, `ccs-one`).
+    Raises ClaudeRunError on an unrecognized value rather than silently falling
+    back, so a misconfigured switch fails loudly.
+    """
+    raw = os.environ.get(LLM_PROVIDER_ENV)
+    if not raw or not raw.strip():
+        return PROVIDER_CCS_ONE
+    normalized = raw.strip().upper().replace(" ", "_").replace("-", "_")
+    if normalized == PROVIDER_CLAUDE:
+        return PROVIDER_CLAUDE
+    if normalized in (PROVIDER_CCS_ONE, "CCS", "ONE"):
+        return PROVIDER_CCS_ONE
+    raise ClaudeRunError(
+        f"{LLM_PROVIDER_ENV}={raw!r} is invalid; expected "
+        f"{PROVIDER_CLAUDE!r} or {PROVIDER_CCS_ONE!r}"
+    )
 
 
 class ClaudeRunError(RuntimeError):
@@ -112,6 +145,18 @@ def _ccs_command() -> list[str]:
     return [launcher]
 
 
+def _claude_command() -> list[str]:
+    """Resolve how to invoke `claude` in headless mode.
+
+    Returns the argv prefix up to (but excluding) the prompt, i.e. ``[claude,
+    "-p"]``. Raises ClaudeRunError if the `claude` CLI is not on PATH.
+    """
+    launcher = shutil.which(CLAUDE_BIN)
+    if launcher is None:
+        raise ClaudeRunError(f"claude CLI not found on PATH ({CLAUDE_BIN})")
+    return [launcher, "-p"]
+
+
 def _subprocess_env() -> dict[str, str]:
     """Environment for the ccs subprocess.
 
@@ -150,12 +195,23 @@ def _strip_ccs_wrapper(raw: str) -> str:
 
 
 def run_claude(prompt: str, *, timeout: float = 180.0) -> str:
-    """Invoke `ccs one -p <prompt>` and return the delegated task's stdout.
+    """Invoke the selected provider with `<prompt>` and return its stdout.
 
-    The CCS result-formatter box is stripped before returning. Raises
-    ClaudeRunError on non-zero exit, timeout, or a missing CLI.
+    Routes to `claude -p` or `ccs one -p` per the ``LLM_PROVIDER`` env var
+    (see module docstring). The CCS result-formatter box is stripped before
+    returning (a no-op for the plain `claude` output). Raises ClaudeRunError on
+    non-zero exit, timeout, or a missing CLI.
     """
-    cmd = _ccs_command() + [CCS_PROFILE, "-p", prompt]
+    if _provider() == PROVIDER_CLAUDE:
+        cmd = _claude_command() + [prompt]
+        env = os.environ.copy()
+        label = "claude -p"
+        missing_bin, missing_name = CLAUDE_BIN, "claude"
+    else:
+        cmd = _ccs_command() + [CCS_PROFILE, "-p", prompt]
+        env = _subprocess_env()
+        label = "ccs one -p"
+        missing_bin, missing_name = CCS_BIN, "ccs"
     try:
         result = subprocess.run(
             cmd,
@@ -164,15 +220,17 @@ def run_claude(prompt: str, *, timeout: float = 180.0) -> str:
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
-            env=_subprocess_env(),
+            env=env,
         )
     except subprocess.TimeoutExpired as e:
-        raise ClaudeRunError(f"ccs one -p timed out after {timeout}s") from e
+        raise ClaudeRunError(f"{label} timed out after {timeout}s") from e
     except FileNotFoundError as e:
-        raise ClaudeRunError(f"ccs CLI not found on PATH ({CCS_BIN})") from e
+        raise ClaudeRunError(
+            f"{missing_name} CLI not found on PATH ({missing_bin})"
+        ) from e
     if result.returncode != 0:
         raise ClaudeRunError(
-            f"ccs one -p exited {result.returncode}: {result.stderr.strip()}"
+            f"{label} exited {result.returncode}: {result.stderr.strip()}"
         )
     return _strip_ccs_wrapper(result.stdout)
 
