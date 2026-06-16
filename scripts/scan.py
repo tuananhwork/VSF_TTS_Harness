@@ -707,6 +707,9 @@ def run_scan(
     out_dir = DATA_ROOT / f"sessions_{label}_runAt_{run_ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    log_fn(f"Quét {source} tại {root}")
+    log_fn(f"Lọc ngày: {label}")
+
     index: list[dict[str, Any]] = []
     scanned = matched = 0
     for summary, turns, rate_limits, ok in _iter_parsed(source, root, targets):

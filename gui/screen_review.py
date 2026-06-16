@@ -5,18 +5,8 @@ from typing import Callable
 
 import flet as ft
 
+import theme as T
 from pipeline_runner import SkillProposal, install_skill
-
-_CONF = {
-    "cao":        {"bg": "#2E7D32", "label": "Cao"},
-    "trung bình": {"bg": "#E65100", "label": "TB"},
-    "thấp":       {"bg": "#616161", "label": "Thấp"},
-}
-_ACCENT = {
-    "cao":        "#4CAF50",
-    "trung bình": "#FF8A65",
-    "thấp":       "#9E9E9E",
-}
 
 
 class ReviewScreen:
@@ -28,38 +18,51 @@ class ReviewScreen:
         self._build()
 
     def _build(self) -> None:
-        self._header_lbl = ft.Text("", size=18, weight=ft.FontWeight.BOLD)
-
-        self._select_all = ft.Checkbox(
-            label="Chọn tất cả",
-            value=True,
-            on_change=self._on_select_all,
+        self._header = T.screen_header(
+            "Kết quả",
+            "Chọn skill muốn cài vào Claude",
+            leading=ft.IconButton(
+                icon=ft.Icons.ARROW_BACK_ROUNDED,
+                tooltip="Quay lại",
+                on_click=lambda e: self._on_back(),
+            ),
         )
 
-        self._card_list = ft.ListView(expand=True, spacing=8)
+        self._select_all = ft.Checkbox(
+            label="Chọn tất cả", value=True, on_change=self._on_select_all,
+        )
+        self._count_lbl = ft.Text("", theme_style=ft.TextThemeStyle.BODY_SMALL,
+                                  color=T.MUTED)
 
-        btn_row = ft.Row([
-            ft.OutlinedButton("← Quay lại", on_click=lambda e: self._on_back()),
-            ft.Container(expand=True),
-            ft.FilledButton(
-                "Cài các skill đã chọn",
-                on_click=self._install_selected,
-            ),
-        ])
+        self._card_list = ft.ListView(expand=True, spacing=T.SM)
+
+        self._install_btn = ft.FilledButton(
+            content=ft.Row([ft.Icon(ft.Icons.DOWNLOAD_ROUNDED, size=18),
+                            ft.Text("Cài skill đã chọn", weight=ft.FontWeight.W_600)],
+                           spacing=T.XS, tight=True),
+            on_click=self._install_selected,
+            height=48,
+            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=T.RADIUS_MD)),
+        )
 
         self.container = ft.Container(
-            content=ft.Column([
-                self._header_lbl,
-                ft.Text("Chọn skill muốn cài vào Claude:", size=12, color="#757575"),
-                ft.Container(height=4),
-                self._select_all,
-                ft.Divider(height=1, color="#E0E0E0"),
-                ft.Container(height=4),
-                self._card_list,
-                ft.Container(height=8),
-                btn_row,
-            ], expand=True, spacing=4),
-            padding=ft.Padding(left=28, right=28, top=24, bottom=24),
+            content=ft.Column(
+                [
+                    self._header,
+                    T.gap(T.MD),
+                    ft.Row([self._select_all, ft.Container(expand=True),
+                            self._count_lbl],
+                           vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Divider(height=1, color=T.HAIRLINE),
+                    T.gap(T.SM),
+                    self._card_list,
+                    T.gap(T.MD),
+                    ft.Row([ft.Container(expand=True), self._install_btn]),
+                ],
+                expand=True,
+                spacing=0,
+            ),
+            padding=T.pad_all(T.XL),
             expand=True,
         )
 
@@ -71,10 +74,7 @@ class ReviewScreen:
         self._card_list.controls.clear()
         self._select_all.value = True
 
-        n = len(proposals)
-        self._header_lbl.value = (
-            f"Phát hiện {n} pattern mới" if n != 1 else "Phát hiện 1 pattern mới"
-        )
+        self._count_lbl.value = f"{len(proposals)} pattern"
 
         for p in proposals:
             cb = ft.Checkbox(value=True)
@@ -84,51 +84,60 @@ class ReviewScreen:
     # ── Card builder ─────────────────────────────────────────────────────────
 
     def _build_card(self, p: SkillProposal, cb: ft.Checkbox) -> ft.Control:
-        conf_style = _CONF.get(p.confidence, _CONF["thấp"])
-        accent = _ACCENT.get(p.confidence, "#9E9E9E")
+        conf = T.CONFIDENCE.get(p.confidence, T.CONFIDENCE["thấp"])
+        accent = conf["color"]
 
         badge = ft.Container(
-            content=ft.Text(
-                conf_style["label"],
-                size=10,
-                weight=ft.FontWeight.BOLD,
-                color="white",
-            ),
-            bgcolor=conf_style["bg"],
-            border_radius=4,
-            padding=ft.Padding(left=7, right=7, top=3, bottom=3),
+            content=ft.Text(conf["label"], size=11, weight=ft.FontWeight.BOLD,
+                            color=ft.Colors.WHITE),
+            bgcolor=accent,
+            border_radius=T.RADIUS_SM,
+            padding=T.pad_xy(8, 3),
         )
 
         meta_items: list[ft.Control] = [
-            ft.Text(f"Lặp {p.recurrence} lần", size=11, color="#9E9E9E"),
+            ft.Row([ft.Icon(ft.Icons.REPLAY_ROUNDED, size=14, color=T.MUTED),
+                    ft.Text(f"Lặp {p.recurrence} lần", size=12, color=T.MUTED)],
+                   spacing=T.XS, tight=True),
             badge,
         ]
         if p.has_quality_issues:
-            meta_items.append(ft.Text("⚠ Cần review", size=10, color="#E65100"))
+            meta_items.append(
+                ft.Row([ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, size=14,
+                                color=T.WARNING),
+                        ft.Text("Cần review", size=11, color=T.WARNING)],
+                       spacing=T.XS, tight=True)
+            )
 
-        desc = p.description[:90] + "…" if len(p.description) > 90 else p.description
+        desc = p.description[:110] + "…" if len(p.description) > 110 else p.description
 
         return ft.Container(
-            content=ft.Row([
-                # Left accent strip
-                ft.Container(
-                    width=4,
-                    bgcolor=accent,
-                    border_radius=ft.BorderRadius(top_left=8, top_right=0, bottom_left=8, bottom_right=0),
-                ),
-                # Checkbox
-                ft.Container(content=cb, padding=ft.Padding(left=10, right=10, top=0, bottom=0)),
-                # Text content
-                ft.Column([
-                    ft.Text(p.name, size=13, weight=ft.FontWeight.BOLD),
-                    ft.Text(desc, size=11, color="#757575", max_lines=2),
-                    ft.Row(meta_items, spacing=6),
-                ], expand=True, spacing=4),
-            ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
-            border=ft.Border(top=ft.BorderSide(1,"#E0E0E0"), right=ft.BorderSide(1,"#E0E0E0"), bottom=ft.BorderSide(1,"#E0E0E0"), left=ft.BorderSide(1,"#E0E0E0")),
-            border_radius=8,
-            padding=ft.Padding(left=0, right=14, top=10, bottom=10),
-            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+            content=ft.Row(
+                [
+                    ft.Container(width=4, bgcolor=accent, border_radius=2,
+                                 margin=ft.Margin(left=0, top=2, right=T.SM,
+                                                  bottom=2)),
+                    cb,
+                    ft.Column(
+                        [
+                            ft.Text(p.name, theme_style=ft.TextThemeStyle.TITLE_SMALL,
+                                    weight=ft.FontWeight.BOLD),
+                            ft.Text(desc, theme_style=ft.TextThemeStyle.BODY_SMALL,
+                                    color=T.MUTED, max_lines=2),
+                            ft.Container(height=2),
+                            ft.Row(meta_items, spacing=T.SM, wrap=True),
+                        ],
+                        spacing=3,
+                        expand=True,
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=T.SM,
+            ),
+            bgcolor=T.SURFACE_ALT,
+            border=T.hairline(),
+            border_radius=T.RADIUS_MD,
+            padding=T.pad(left=T.SM, top=T.MD, right=T.MD, bottom=T.MD),
         )
 
     # ── Callbacks ────────────────────────────────────────────────────────────
@@ -153,26 +162,23 @@ class ReviewScreen:
             if failed:
                 msg += f"\n\nLỗi ({len(failed)}):\n• " + "\n• ".join(failed)
             msg += "\n\nCó hiệu lực từ phiên Claude tiếp theo."
+            icon, tint = ft.Icons.CHECK_CIRCLE_ROUNDED, T.SUCCESS
         elif failed:
-            msg = "Không cài được skill nào.\n" + "\n".join(failed)
+            msg = "Không cài được skill nào.\n• " + "\n• ".join(failed)
+            icon, tint = ft.Icons.ERROR_ROUNDED, ft.Colors.ERROR
         else:
-            msg = "Không có skill nào được chọn."
+            msg = "Bạn chưa chọn skill nào."
+            icon, tint = ft.Icons.INFO_ROUNDED, T.MUTED
 
-        self._show_dialog("Pattern — Hoàn tất", msg)
+        self._show_result("Hoàn tất", msg, icon, tint)
 
-    def _show_dialog(self, title: str, content: str) -> None:
+    def _show_result(self, title: str, content: str, icon: str, tint: str) -> None:
         dlg = ft.AlertDialog(
             modal=True,
-            title=ft.Text(title),
+            icon=ft.Icon(icon, color=tint, size=32),
+            title=ft.Text(title, text_align=ft.TextAlign.CENTER),
             content=ft.Text(content),
+            actions=[ft.FilledButton("OK", on_click=lambda e: self._page.pop_dialog())],
+            actions_alignment=ft.MainAxisAlignment.END,
         )
-
-        def close(e):
-            dlg.open = False
-            self._page.overlay.remove(dlg)
-            self._page.update()
-
-        dlg.actions = [ft.TextButton("OK", on_click=close)]
-        self._page.overlay.append(dlg)
-        dlg.open = True
-        self._page.update()
+        self._page.show_dialog(dlg)

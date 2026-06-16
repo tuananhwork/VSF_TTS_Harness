@@ -1,10 +1,9 @@
 """Pattern GUI — main app entry point."""
 from __future__ import annotations
 
+import asyncio
 import queue
 import sys
-import time
-import threading
 from pathlib import Path
 
 import flet as ft
@@ -13,6 +12,7 @@ _GUI = Path(__file__).resolve().parent
 if str(_GUI) not in sys.path:
     sys.path.insert(0, str(_GUI))
 
+import theme as T
 from pipeline_runner import PipelineParams, PipelineRunner, SkillProposal
 from screen_configure import ConfigureScreen
 from screen_running import RunningScreen
@@ -21,10 +21,14 @@ from screen_review import ReviewScreen
 
 def main(page: ft.Page) -> None:
     page.title = "Pattern"
-    page.window.width = 560
-    page.window.height = 660
-    page.window.min_width = 480
-    page.window.min_height = 560
+    page.window.width = 600
+    page.window.height = 720
+    page.window.min_width = 520
+    page.window.min_height = 600
+
+    light, dark = T.build_themes()
+    page.theme = light
+    page.dark_theme = dark
     page.theme_mode = ft.ThemeMode.SYSTEM
     page.padding = 0
 
@@ -70,20 +74,25 @@ def main(page: ft.Page) -> None:
         _show_running()
         _runner[0] = PipelineRunner(params, _q)
         _runner[0].start()
-        threading.Thread(target=_poll_queue, daemon=True).start()
+        # Drainer chạy như async task TRÊN event loop (không phải thread nền):
+        # mọi page.update() phát ra từ đúng loop nên flush log tức thì. Việc nặng
+        # (subprocess blocking của judge/synth) vẫn nằm trong PipelineRunner thread.
+        page.run_task(_drain_loop)
 
     def _cancel_pipeline() -> None:
         if _runner[0]:
             _runner[0].cancel()
         _show_configure()
 
-    # ── Queue polling (background thread) ────────────────────────────────────
+    # ── Queue draining (async task trên event loop) ──────────────────────────
 
-    def _poll_queue() -> None:
-        while _runner[0] and _runner[0].is_alive():
+    async def _drain_loop() -> None:
+        while True:
+            alive = bool(_runner[0] and _runner[0].is_alive())
             _drain()
-            time.sleep(0.05)
-        _drain()  # final drain after thread ends
+            if not alive and _q.empty():
+                break
+            await asyncio.sleep(0.05)
 
     def _drain() -> None:
         changed = False

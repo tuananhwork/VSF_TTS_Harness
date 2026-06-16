@@ -1,4 +1,4 @@
-"""Màn hình 1 — Configure: chọn ngày, source, tùy chọn nâng cao."""
+"""Màn hình 1 — Configure: chọn ngày, nguồn log, tùy chọn nâng cao."""
 from __future__ import annotations
 
 from datetime import datetime, date, timezone
@@ -6,7 +6,13 @@ from typing import Callable
 
 import flet as ft
 
-_SOURCES = ["claude-cowork", "claude-code"]
+import theme as T
+
+# (value, nhãn hiển thị, icon)
+_SOURCES = [
+    ("claude-cowork", "Cowork", ft.Icons.GROUPS_OUTLINED),
+    ("claude-code", "Code", ft.Icons.TERMINAL),
+]
 
 
 class ConfigureScreen:
@@ -14,127 +20,202 @@ class ConfigureScreen:
         self._page = page
         self._on_run = on_run
         self._selected_date: date = date.today()
-        self._source: str = _SOURCES[0]
+        self._source: str = _SOURCES[0][0]
         self._build()
 
     def _build(self) -> None:
-        # ── Date picker (overlay dialog) ─────────────────────────────────────
+        # ── Date picker (mở qua page.show_dialog) ────────────────────────────
         self._date_picker = ft.DatePicker(
             current_date=datetime.today(),
             on_change=self._on_date_change,
             first_date=datetime(2020, 1, 1),
             last_date=datetime(2030, 12, 31),
         )
-        self._page.overlay.append(self._date_picker)
 
-        # Positional text — Flet 0.85 buttons don't accept text= as keyword
-        self._date_btn = ft.OutlinedButton(
+        self._date_text = ft.Text(
             self._selected_date.isoformat(),
-            icon=ft.Icons.CALENDAR_MONTH,
+            theme_style=ft.TextThemeStyle.BODY_LARGE,
+            weight=ft.FontWeight.W_500,
+            expand=True,
+        )
+        date_card = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.CALENDAR_MONTH_OUTLINED, color=ft.Colors.PRIMARY),
+                    self._date_text,
+                    ft.Icon(ft.Icons.EXPAND_MORE, color=T.MUTED, size=20),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=T.MD,
+            ),
             on_click=self._open_date_picker,
+            bgcolor=T.SURFACE_ALT,
+            border=T.hairline(),
+            border_radius=T.RADIUS_MD,
+            padding=T.pad_xy(T.MD, T.SM + 4),
+            ink=True,
         )
 
         # ── Source segmented button ──────────────────────────────────────────
         self._source_seg = ft.SegmentedButton(
-            selected=[_SOURCES[0]],
-            segments=[ft.Segment(value=s, label=s) for s in _SOURCES],
+            selected=[_SOURCES[0][0]],
+            show_selected_icon=True,
+            segments=[
+                ft.Segment(value=v, label=ft.Text(lbl), icon=ft.Icon(ic))
+                for v, lbl, ic in _SOURCES
+            ],
             on_change=self._on_source_change,
         )
 
-        # ── Advanced options ─────────────────────────────────────────────────
-        self._min_rec = ft.TextField(
-            value="2",
-            width=72,
-            height=40,
-            dense=True,
-            text_align=ft.TextAlign.CENTER,
-            border_radius=6,
-        )
-        self._max_dd = ft.TextField(
-            value="5",
-            width=72,
-            height=40,
-            dense=True,
-            text_align=ft.TextAlign.CENTER,
-            border_radius=6,
-        )
+        # ── Tùy chọn nâng cao ─────────────────────────────────────────────────
+        self._min_rec = self._num_field("2")
+        self._max_dd = self._num_field("5")
 
         adv_tile = ft.ExpansionTile(
-            title=ft.Text("Tùy chọn nâng cao", size=13, color="#9E9E9E"),
+            title=ft.Text("Tùy chọn nâng cao",
+                          theme_style=ft.TextThemeStyle.BODY_MEDIUM),
+            leading=ft.Icon(ft.Icons.TUNE, size=20, color=T.MUTED),
+            affinity=ft.TileAffinity.PLATFORM,
             controls=[
-                ft.Column([
-                    ft.Row([
-                        ft.Text("Min recurrence", size=12, color="#757575", expand=True),
-                        self._min_rec,
-                    ]),
-                    ft.Row([
-                        ft.Text("Max deepdive", size=12, color="#757575", expand=True),
-                        self._max_dd,
-                    ]),
-                ], spacing=8),
+                ft.Container(
+                    content=ft.Column([
+                        self._adv_row(
+                            "Số lần lặp tối thiểu",
+                            "Pattern phải xuất hiện ít nhất bấy nhiêu lần",
+                            self._min_rec,
+                        ),
+                        self._adv_row(
+                            "Số deepdive tối đa",
+                            "Giới hạn số pattern được phân tích sâu",
+                            self._max_dd,
+                        ),
+                    ], spacing=T.MD),
+                    padding=T.pad(left=T.SM, top=T.SM, right=T.SM, bottom=T.MD),
+                ),
             ],
         )
 
-        # ── Run button ───────────────────────────────────────────────────────
-        run_btn = ft.Row([
-            ft.FilledButton(
-                "Chạy Pipeline",
-                on_click=self._on_run_click,
-                height=50,
-                expand=True,
+        # ── Run button ────────────────────────────────────────────────────────
+        run_btn = ft.FilledButton(
+            content=ft.Row(
+                [ft.Icon(ft.Icons.PLAY_ARROW_ROUNDED),
+                 ft.Text("Chạy Pipeline", weight=ft.FontWeight.W_600)],
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=T.SM,
             ),
-        ])
+            on_click=self._on_run_click,
+            height=52,
+            expand=True,  # full-width khi đặt trong Row
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=T.RADIUS_MD),
+            ),
+        )
 
-        # ── Container ────────────────────────────────────────────────────────
-        self.container = ft.Container(
-            content=ft.Column([
-                ft.Text("Pattern", size=28, weight=ft.FontWeight.BOLD),
-                ft.Text(
-                    "Phân tích hành vi làm việc với Claude  →  gợi ý Skill",
-                    size=12,
-                    color="#757575",
+        # ── Layout ──────────────────────────────────────────────────────────
+        self._theme_btn = ft.IconButton(
+            icon=ft.Icons.DARK_MODE_OUTLINED,
+            tooltip="Đổi giao diện sáng / tối",
+            on_click=self._toggle_theme,
+        )
+
+        body = ft.Column(
+            [
+                T.screen_header(
+                    "Pattern",
+                    "Phân tích hành vi làm việc với Claude → gợi ý Skill",
+                    trailing=self._theme_btn,
                 ),
-                ft.Divider(height=1, color="#E0E0E0"),
-                ft.Container(height=8),
+                T.gap(T.LG),
 
-                ft.Text("Ngày phân tích", size=13, weight=ft.FontWeight.BOLD),
-                ft.Container(height=4),
-                self._date_btn,
-                ft.Container(height=20),
+                T.section_label("Ngày phân tích"),
+                T.gap(T.SM),
+                date_card,
+                T.gap(T.LG),
 
-                ft.Text("Nguồn log", size=13, weight=ft.FontWeight.BOLD),
-                ft.Container(height=4),
+                T.section_label("Nguồn log"),
+                T.gap(T.SM),
                 self._source_seg,
-                ft.Container(height=12),
+                T.gap(T.MD),
 
                 adv_tile,
-                ft.Container(height=24),
-
-                run_btn,
-            ], spacing=0),
-            padding=ft.Padding(left=28, right=28, top=28, bottom=28),
+            ],
+            spacing=0,
+            scroll=ft.ScrollMode.AUTO,
             expand=True,
+        )
+
+        self.container = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Container(content=body, expand=True),
+                    T.gap(T.MD),
+                    ft.Row([run_btn]),
+                ],
+                spacing=0,
+                expand=True,
+            ),
+            padding=T.pad_all(T.XL),
+            expand=True,
+        )
+
+    # ── Builders nhỏ ──────────────────────────────────────────────────────────
+
+    def _num_field(self, value: str) -> ft.TextField:
+        return ft.TextField(
+            value=value,
+            width=80,
+            height=44,
+            dense=True,
+            filled=True,
+            text_align=ft.TextAlign.CENTER,
+            border_radius=T.RADIUS_SM,
+            keyboard_type=ft.KeyboardType.NUMBER,
+        )
+
+    def _adv_row(self, title: str, hint: str, field: ft.TextField) -> ft.Control:
+        return ft.Row(
+            [
+                ft.Column(
+                    [
+                        ft.Text(title, theme_style=ft.TextThemeStyle.BODY_MEDIUM),
+                        ft.Text(hint, theme_style=ft.TextThemeStyle.BODY_SMALL,
+                                color=T.MUTED),
+                    ],
+                    spacing=2,
+                    expand=True,
+                ),
+                field,
+            ],
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
     # ── Callbacks ────────────────────────────────────────────────────────────
 
     def _open_date_picker(self, e) -> None:
-        self._date_picker.open = True
-        self._page.update()
+        self._page.show_dialog(self._date_picker)
 
     def _on_date_change(self, e) -> None:
-        if e.control.value:
-            v = e.control.value
-            # Flet returns UTC midnight as a naive datetime; convert to local to get correct date
+        v = e.control.value
+        if v:
+            # Flet trả UTC midnight (naive); đổi sang local để lấy đúng ngày.
             local_dt = v.replace(tzinfo=timezone.utc).astimezone(tz=None)
             self._selected_date = date(local_dt.year, local_dt.month, local_dt.day)
-            self._date_btn.content = self._selected_date.isoformat()
+            self._date_text.value = self._selected_date.isoformat()
             self._page.update()
 
     def _on_source_change(self, e) -> None:
         selected = e.control.selected
         if selected:
-            self._source = list(selected)[0]
+            self._source = next(iter(selected))
+
+    def _toggle_theme(self, e) -> None:
+        if self._page.theme_mode == ft.ThemeMode.DARK:
+            self._page.theme_mode = ft.ThemeMode.LIGHT
+            self._theme_btn.icon = ft.Icons.DARK_MODE_OUTLINED
+        else:
+            self._page.theme_mode = ft.ThemeMode.DARK
+            self._theme_btn.icon = ft.Icons.LIGHT_MODE_OUTLINED
+        self._page.update()
 
     def _on_run_click(self, e) -> None:
         try:
