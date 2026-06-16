@@ -114,7 +114,12 @@ hay chỉ là chat tự học cá nhân? Chỉ luồng có giá trị nghiệp v
 
 
 JUDGE_TASK = """NHIỆM VỤ: đọc candidate + facts (đã trích) + traces, rồi phán xét
-THEO ĐÚNG TRỤC GIÁ TRỊ CỦA BẠN (bỏ qua mọi trục khác). Output STRICT JSON object:
+THEO ĐÚNG TRỤC GIÁ TRỊ CỦA BẠN (bỏ qua mọi trục khác).
+
+Khi cần số liệu, dùng `candidate.metrics` (recurrence/repeat_rate/pivot_rate —
+tính trên evidence đã merge) làm số thật.
+
+Output STRICT JSON object:
 {
   "stance": "approve" | "reject" | "neutral",
   "axis_score": 1-5,      // điểm trên trục của riêng bạn
@@ -136,6 +141,10 @@ CONSOLIDATOR_INSTRUCTIONS = """PASS 2 · CONSOLIDATOR (chốt 1 candidate).
 Bạn nhận candidate, facts đã trích, và `verdicts` — phán xét của từng judge theo
 trục riêng (mỗi verdict có stance / axis_score / argument; verdict có `error` là
 judge lỗi, cứ coi như khuyết). Tổng hợp lại thành quyết nghị cuối:
+
+LƯU Ý SỐ THẬT: `candidate.metrics` (recurrence / repeat_rate / pivot_rate) được
+TÍNH LẠI bằng code trên đúng tập evidence đã merge — ĐÂY là số thật để chấm axis
+recurrence; bỏ qua mọi behavior_class_hint per-group cũ nếu mâu thuẫn.
 
 1. `final_score`: recurrence / cohesion / personalization (1-5) — quy các
    axis_score + lập luận của judge về 3 trục chuẩn này.

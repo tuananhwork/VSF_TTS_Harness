@@ -101,3 +101,11 @@ def test_consolidator_prompt_includes_all_verdicts() -> None:
     assert "final_score" in prompt
     assert "rejected_reason" in prompt
     assert "consolidator_note" in prompt
+
+
+def test_consolidator_prompt_marks_metrics_authoritative() -> None:
+    cand = {"name": "x", "metrics": {"recurrence": 3, "repeat_rate": 0.0,
+                                     "pivot_rate": 0.0, "behavior_class": "process"}}
+    prompt = build_consolidator_prompt(cand, {}, [])
+    assert "candidate.metrics" in prompt      # hướng dẫn dùng số thật
+    assert '"recurrence": 3' in prompt          # số thật được serialize vào prompt
