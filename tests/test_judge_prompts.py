@@ -18,7 +18,7 @@ def _group() -> dict:
         "intent_seeds": ["Tóm tắt file", "đọc và tóm tắt file"],
         "tool_sequence_per_session": [["Read", "Edit×2"], ["Read", "Edit"]],
         "repeat_rate": 0.0,
-        "pivot_rate": 0.0,
+        "failure_rate": 0.0,
         "behavior_class_hint": "process",
     }
 
@@ -53,7 +53,7 @@ def _traces() -> dict:
         "sid-a": [
             {"role": "user", "text": "Tóm tắt file", "feedback": None},
             {"role": "assistant", "tools": ["Read", "Edit×2"], "feedback": None},
-            {"role": "user", "text": "sai rồi", "feedback": "pivot"},
+            {"role": "assistant", "tools": ["bash"], "feedback": "repeat"},
         ],
     }
 
@@ -61,7 +61,7 @@ def _traces() -> dict:
 def test_extract_prompt_requests_factual_fields_only() -> None:
     prompt = build_extract_prompt(_candidate(), _traces())
     assert "summarize_file" in prompt
-    assert "pivot" in prompt                 # trace markers surfaced
+    assert "repeat" in prompt                 # trace markers surfaced
     assert "action_template" in prompt       # ordered flow requested
     assert "weak_points" in prompt
     assert "improvement_notes" in prompt
@@ -105,7 +105,7 @@ def test_consolidator_prompt_includes_all_verdicts() -> None:
 
 def test_consolidator_prompt_marks_metrics_authoritative() -> None:
     cand = {"name": "x", "metrics": {"recurrence": 3, "repeat_rate": 0.0,
-                                     "pivot_rate": 0.0, "behavior_class": "process"}}
+                                     "failure_rate": 0.0, "behavior_class": "process"}}
     prompt = build_consolidator_prompt(cand, {}, [])
     assert "candidate.metrics" in prompt      # hướng dẫn dùng số thật
     assert '"recurrence": 3' in prompt          # số thật được serialize vào prompt

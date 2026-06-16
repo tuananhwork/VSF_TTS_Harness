@@ -51,7 +51,7 @@ _PATTERN_REPORT_TMPL = _env.from_string("""\
 
 {% for cl in clusters %}
 ### Cluster {{ loop.index }} ({{ cl.behavior_class_hint }})
-- recurrence: {{ cl.recurrence }}, repeat_rate: {{ cl.repeat_rate }}, pivot_rate: {{ cl.pivot_rate }}
+- recurrence: {{ cl.recurrence }}, repeat_rate: {{ cl.repeat_rate }}, failure_rate: {{ cl.failure_rate }}
 - representative tools: `{{ cl.representative_tools | join(", ") }}`
 - tool_sequence: {% for seq in cl.tool_sequence_per_session %}`{{ seq | join(" → ") }}`{% if not loop.last %} | {% endif %}{% endfor %}
 
@@ -68,7 +68,7 @@ _PATTERN_REPORT_TMPL = _env.from_string("""\
 - Trigger (VI): {{ c.trigger_intent.vi }}
 - Trigger (EN): {{ c.trigger_intent.en }}
 {% if c.metrics %}
-- recurrence (recomputed): {{ c.metrics.recurrence }}, repeat_rate: {{ "%.3f"|format(c.metrics.repeat_rate) }}, pivot_rate: {{ "%.3f"|format(c.metrics.pivot_rate) }}{{ (" — ⚠️ bỏ %d session_id bịa" % (c.metrics.unknown_session_ids | length)) if c.metrics.unknown_session_ids else "" }}
+- recurrence (recomputed): {{ c.metrics.recurrence }}, repeat_rate: {{ "%.3f"|format(c.metrics.repeat_rate) }}, failure_rate: {{ "%.3f"|format(c.metrics.failure_rate) }}{{ (" — ⚠️ bỏ %d session_id bịa" % (c.metrics.unknown_session_ids | length)) if c.metrics.unknown_session_ids else "" }}
 {% endif %}
 - Score total: {{ c._score_total }}
 - Flow (action template):

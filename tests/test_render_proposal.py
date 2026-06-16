@@ -16,7 +16,7 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
             "representative_titles": ["Tóm tắt file PDF báo cáo"],
             "recurrence": 2,
             "repeat_rate": 0.0,
-            "pivot_rate": 0.0,
+            "failure_rate": 0.0,
             "avg_duration_seconds": 12.3,
             "total_tokens": 1000,
             "behavior_class_hint": "process",
@@ -31,7 +31,7 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
             "trigger_intent": {"vi": "Khi user muốn tóm tắt PDF", "en": "When user wants to summarize PDF"},
             "action_template": [{"step": 1, "tool": "scan", "input_shape": "path"}],
             "evidence": {"session_ids": ["s1", "s2"], "process_names": ["proc-a"]},
-            "metrics": {"recurrence": 3, "repeat_rate": 0.0, "pivot_rate": 0.0,
+            "metrics": {"recurrence": 3, "repeat_rate": 0.0, "failure_rate": 0.0,
                         "behavior_class": "process"},
             "final_score": {"recurrence": 4, "cohesion": 4, "personalization": 3},
             "behavior_class": "inefficient",
@@ -71,7 +71,7 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
     # Recomputed metrics surfaced so the human sees the authoritative recurrence.
     assert "recurrence (recomputed): 3" in md
     # ...and the metric line must end with a newline (not glue onto "Score total").
-    assert "pivot_rate: 0.000\n" in md
+    assert "failure_rate: 0.000\n" in md
 
 
 from pathlib import Path

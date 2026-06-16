@@ -2,7 +2,7 @@
 
 Where aggregator.py works on count-aggregated summaries (cheap triage), the
 deep-dive needs to *see the flow*: the user request, the ordered tool calls,
-and exactly where the user pivoted the plan or Claude repeated a tool. That
+and exactly where Claude reworked a failed tool (the `repeat` flag). That
 signal lives in the `turn` records scan.py writes; this module reconstructs a
 compact, ordered view of them.
 
