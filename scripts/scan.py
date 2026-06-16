@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
@@ -122,6 +123,10 @@ class SessionSummary:
     process_name: str | None
     workspace_id: str | None
     user_selected_folders: list[str]
+    skills_enabled: bool | None
+    plugins_enabled: bool | None
+    available_slash_commands: list[str]
+    focused_apps: list[str]
     created_at: str | None
     last_activity_at: str | None
     duration_seconds: float | None
@@ -139,6 +144,9 @@ class SessionSummary:
     repeat_count: int
     rate_limit_hits: int
     outputs_produced: int
+    outputs_names: list[str]
+    uploads_produced: int
+    upload_names: list[str]
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
@@ -234,6 +242,21 @@ def trim_input(payload: Any, max_str: int = 300) -> Any:
     return payload
 
 
+# Computer-use prompts embed the focused window as:
+#   <cu_window_hints>The user is pointing at: window "Title - App" (...)</cu_window_hints>
+# We keep the quoted window title — a stable per-user domain marker (L5).
+_WINDOW_HINT_RE = re.compile(
+    r'<cu_window_hints>.*?pointing at:\s*window\s*"([^"]+)"', re.DOTALL
+)
+
+
+def extract_window_hints(text: str | None) -> list[str]:
+    """Return window titles named in any `<cu_window_hints>` blocks in `text`."""
+    if not text:
+        return []
+    return _WINDOW_HINT_RE.findall(text)
+
+
 def extract_user_text(content: Any) -> str | None:
     if isinstance(content, str):
         return content
@@ -316,6 +339,7 @@ def parse_session(
     mcp_usage: dict[str, int] = {}
     actions_by_tool_use_id: dict[str, ActionRecord] = {}
     seen_uuids: set[str] = set()
+    focused_apps: list[str] = []
     turn_idx = 0
 
     for event in iter_jsonl(audit_path):
@@ -369,6 +393,9 @@ def parse_session(
                 continue
 
             text = extract_user_text(content)
+            for app in extract_window_hints(text):
+                if app not in focused_apps:
+                    focused_apps.append(app)
             turn_idx += 1
             turns.append(TurnRecord(
                 idx=turn_idx,
@@ -429,12 +456,16 @@ def parse_session(
     # Structural feedback: flag assistant turns that reworked a failed tool.
     mark_rework_turns(turns)
 
-    # Outcome — count produced output files
-    outputs_folder = audit_path.parent / "outputs"
-    outputs_produced = (
-        sum(1 for p in outputs_folder.rglob("*") if p.is_file())
-        if outputs_folder.exists() else 0
-    )
+    # Outcome / artifact signals — names of files Claude produced (outputs/) and
+    # files the user brought in (uploads/). Names reveal artifact type (xlsx,
+    # png, pptx…) which a bare count can't; see data_goal L5/L7.
+    def _file_names(folder: Path) -> list[str]:
+        if not folder.exists():
+            return []
+        return sorted(p.name for p in folder.rglob("*") if p.is_file())
+
+    outputs_names = _file_names(audit_path.parent / "outputs")
+    upload_names = _file_names(audit_path.parent / "uploads")
 
     duration = None
     if meta.get("createdAt") and meta.get("lastActivityAt"):
@@ -448,6 +479,10 @@ def parse_session(
         process_name=meta.get("processName"),
         workspace_id=workspace_id,
         user_selected_folders=meta.get("userSelectedFolders") or [],
+        skills_enabled=meta.get("skillsEnabled"),
+        plugins_enabled=meta.get("pluginsEnabled"),
+        available_slash_commands=meta.get("slashCommands") or [],
+        focused_apps=focused_apps,
         created_at=(datetime.fromtimestamp(meta["createdAt"] / 1000).isoformat()
                     if meta.get("createdAt") else None),
         last_activity_at=(datetime.fromtimestamp(meta["lastActivityAt"] / 1000).isoformat()
@@ -468,7 +503,10 @@ def parse_session(
         ),
         repeat_count=sum(1 for t in turns if t.feedback_flag == "repeat"),
         rate_limit_hits=len(rate_limits),
-        outputs_produced=outputs_produced,
+        outputs_produced=len(outputs_names),
+        outputs_names=outputs_names,
+        uploads_produced=len(upload_names),
+        upload_names=upload_names,
     )
     return summary, turns, rate_limits
 

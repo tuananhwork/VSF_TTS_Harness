@@ -78,10 +78,13 @@ Chi tiết bảng field 7 lớp xem `data_goal.md`. Tóm tắt:
 - **L2 Intent** — `title`, `intent_seed` (initialMessage), `user_text`, `<cu_window_hints>`
 - **L3 Action atom** — `tool_name`, `mcp_server`, `input_summary`, `result_ok`, `error_kind`
 - **L4 Workflow** — thứ tự `turn.idx` + `turn.actions[]` giữ nguyên sequence gốc
-- **L5 Context/Env** — `model`, `process_name`, `user_selected_folders`, MCP status
+- **L5 Context/Env** — `model`, `process_name`, `user_selected_folders`, `focused_apps`
+  (window title trích từ `<cu_window_hints>`), `skills_enabled`, `plugins_enabled`,
+  `available_slash_commands` (skill/plugin user đã bật — tránh đề xuất trùng), MCP status
 - **L6 Feedback** — `feedback_flag ∈ {correction, confirm, retry}` (heuristic)
-- **L7 Outcome** — `input_tokens`, `output_tokens`, `rate_limit_hits`, `outputs_produced`,
-  `tool_usage` (top tool), `mcp_usage` (top MCP server)
+- **L7 Outcome** — `input_tokens`, `output_tokens`, `rate_limit_hits`,
+  `outputs_produced` + `outputs_names`, `uploads_produced` + `upload_names`
+  (tên file = loại artifact: xlsx/png/pdf…), `tool_usage` (top tool), `mcp_usage` (top MCP server)
 
 Heuristic feedback:
 
