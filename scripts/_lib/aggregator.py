@@ -1,10 +1,12 @@
-"""Rule-based session pre-grouping for Pattern's Lượt 2 judge stage.
+"""Rule-based session pre-grouping + post-merge metric recompute for Pattern's
+Lượt 2 judge stage.
 
-Pure Python. No LLM. Takes per-session JSONL produced by scripts/scan.py and
-does a loose grouping by tool usage so the judge prompt sees manageable
-chunks. Whether sessions across groups share the *same intent* (e.g. "Tóm
-tắt file ..." regardless of which file/title) is left to the LLM judge, since
-titles are auto-generated per session and vary even for the same task.
+Pure Python. No LLM. `cluster_by_tool_ngram` does a loose tool-usage grouping so
+the triage prompt sees manageable chunks; the LLM then merges across groups by
+intent (titles are auto-generated per session and vary even for the same task).
+`recompute_candidate_metrics` re-derives recurrence/rates on the LLM's merged
+evidence so downstream metrics reflect the authoritative grouping, not the tool
+pre-group.
 """
 
 from __future__ import annotations
@@ -217,6 +219,31 @@ def _build_cluster(group: list[Session]) -> Cluster:
         total_tokens=total_tokens,
         behavior_class_hint=m["behavior_class"],
     )
+
+
+def recompute_candidate_metrics(
+    candidates: list[dict], sessions: list[Session]
+) -> list[dict]:
+    """Tính lại metric của mỗi candidate từ ĐÚNG các session mà evidence trỏ tới
+    (merge có thẩm quyền của LLM), không phải tool-ngram pre-group. session_id
+    bịa (không có trong `sessions`) bị loại và ghi vào `metrics.unknown_session_ids`.
+    Trả về bản copy; không mutate input."""
+    by_id = {s.session_id: s for s in sessions}
+    out: list[dict] = []
+    for c in candidates:
+        c = dict(c)
+        ids = list(dict.fromkeys(c.get("evidence", {}).get("session_ids", [])))
+        resolved = [by_id[i] for i in ids if i in by_id]
+        unknown = [i for i in ids if i not in by_id]
+        if resolved:
+            m = cluster_metrics(resolved)
+        else:
+            m = {"recurrence": 0, "repeat_rate": 0.0, "pivot_rate": 0.0,
+                 "behavior_class": "unclear"}
+        m["unknown_session_ids"] = unknown
+        c["metrics"] = m
+        out.append(c)
+    return out
 
 
 def aggregate(

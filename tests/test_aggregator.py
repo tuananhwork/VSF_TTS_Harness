@@ -147,3 +147,40 @@ def test_cluster_metrics_computes_rates_and_behavior() -> None:
     assert m["repeat_rate"] == 0.3        # mean(3/10, 3/10)
     assert m["pivot_rate"] == 0.25        # mean(1/4, 1/4)
     assert m["behavior_class"] == "inefficient"   # repeat_rate >= 0.2
+
+
+def _sess(sid: str, repeat: int, pivot: int) -> Session:
+    return Session(
+        session_id=sid, process_name=sid, title="x", intent_seed=None,
+        total_actions=10, total_user_turns=4, total_input_tokens=0,
+        total_output_tokens=0, duration_seconds=0.0,
+        tool_usage={"click": 10}, repeat_count=repeat, pivot_count=pivot,
+    )
+
+
+def test_recompute_uses_merged_evidence_not_tool_group() -> None:
+    from _lib.aggregator import recompute_candidate_metrics
+    sessions = [_sess("s1", 0, 0), _sess("s2", 0, 0), _sess("s3", 0, 0)]
+    # LLM merged 3 sessions into one candidate, though tool-ngram split them.
+    cands = [{"name": "summarize",
+              "evidence": {"session_ids": ["s1", "s2", "s3"]}}]
+    out = recompute_candidate_metrics(cands, sessions)
+    assert out[0]["metrics"]["recurrence"] == 3
+    assert out[0]["metrics"]["behavior_class"] == "process"  # rec>=3, repeat<0.1
+    assert out[0]["metrics"]["unknown_session_ids"] == []
+
+
+def test_recompute_drops_hallucinated_session_ids() -> None:
+    from _lib.aggregator import recompute_candidate_metrics
+    sessions = [_sess("s1", 0, 0)]
+    cands = [{"name": "x", "evidence": {"session_ids": ["s1", "ghost"]}}]
+    out = recompute_candidate_metrics(cands, sessions)
+    assert out[0]["metrics"]["recurrence"] == 1            # only s1 is real
+    assert out[0]["metrics"]["unknown_session_ids"] == ["ghost"]
+
+
+def test_recompute_does_not_mutate_input() -> None:
+    from _lib.aggregator import recompute_candidate_metrics
+    cands = [{"name": "x", "evidence": {"session_ids": ["s1"]}}]
+    recompute_candidate_metrics(cands, [_sess("s1", 0, 0)])
+    assert "metrics" not in cands[0]
