@@ -45,19 +45,20 @@ def main() -> None:
         "--llm-provider",
         default="claude",
         metavar="PROVIDER",
-        help="LLM provider: 'claude' (default) or 'ccs-one'.",
+        help="LLM provider: 'claude' (default) or 'ccs'.",
     )
     parser.add_argument(
         "--ccs-profile",
         default=None,
         metavar="NAME",
-        help="CCS profile name (required when --llm-provider=ccs-one).",
+        help="CCS profile name (required when --llm-provider=ccs).",
     )
     args = parser.parse_args()
 
     provider = args.llm_provider.upper().replace("-", "_")
-    if provider == "CCS_ONE" and not args.ccs_profile:
-        parser.error("--ccs-profile NAME is required when --llm-provider=ccs-one")
+    is_ccs = provider in ("CCS", "CCS_ONE", "ONE")
+    if is_ccs and not args.ccs_profile:
+        parser.error("--ccs-profile NAME is required when --llm-provider=ccs")
 
     llm_env = {"LLM_PROVIDER": provider}
     if args.ccs_profile:
