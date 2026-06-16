@@ -39,7 +39,12 @@ CLAUDE_BIN = "claude"
 
 
 def _ccs_profile() -> str:
-    return os.environ.get("CCS_PROFILE", "one").strip() or "one"
+    val = os.environ.get("CCS_PROFILE", "").strip()
+    if not val:
+        raise ClaudeRunError(
+            "CCS_PROFILE is not set. Pass --ccs-profile NAME when using --llm-provider=ccs-one."
+        )
+    return val
 
 LLM_PROVIDER_ENV = "LLM_PROVIDER"
 PROVIDER_CLAUDE = "CLAUDE"
