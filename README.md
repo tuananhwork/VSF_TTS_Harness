@@ -74,7 +74,22 @@ uv run python scripts/synth.py \
     --top 3 --timeout 120
 ```
 
+Mỗi accepted candidate đi qua 2 stage:
+- **render_skill** (LLM, 1 call): dịch candidate (VI) → nội dung skill **English**
+  (description, capabilities, red flags, golden tests). Đây là phần cần reasoning.
+- **assemble_skill** (code, deterministic): dựng folder skill:
+  - `SKILL.md` — **chỉ chỉ dẫn**, English; 1 năng lực → flow inline, nhiều năng lực
+    → index + `references/<slug>.md` mỗi năng lực.
+  - `scripts/<name>` — stub trung thực cho bước deterministic (không bịa logic).
+  - `evidence/<time>_<hash>/evidence.md` — toàn bộ provenance (session_ids,
+    good/weak/improvement gốc, debate, metrics). **Không** nằm trong SKILL.md.
+  - `golden_tests.md`.
+- **validate_skill** (code): quality gate — frontmatter đúng 3 key, name==folder,
+  không leak birth-history, references khớp index. Vi phạm được cờ trong
+  `## Synth quality gate` của PROPOSAL.md.
+
 Output: `data/skills_<date>_proposal/{PROPOSAL.md, accept.py, <skill-name>/...}`.
+`accept.py` copy nguyên folder skill **kèm** `evidence/`.
 
 ### 4) Accept — cài skill bạn duyệt
 
