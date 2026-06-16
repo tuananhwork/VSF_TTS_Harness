@@ -70,6 +70,8 @@ def test_pattern_report_lists_candidates_and_clusters() -> None:
     assert "Phê duyệt: flow lặp lại, đáng đóng gói" in md
     # Recomputed metrics surfaced so the human sees the authoritative recurrence.
     assert "recurrence (recomputed): 3" in md
+    # ...and the metric line must end with a newline (not glue onto "Score total").
+    assert "pivot_rate: 0.000\n" in md
 
 
 from pathlib import Path
