@@ -52,7 +52,7 @@ def _provider() -> str:
     """
     raw = os.environ.get(LLM_PROVIDER_ENV)
     if not raw or not raw.strip():
-        return PROVIDER_CCS_ONE
+        return PROVIDER_CLAUDE
     normalized = raw.strip().upper().replace(" ", "_").replace("-", "_")
     if normalized == PROVIDER_CLAUDE:
         return PROVIDER_CLAUDE

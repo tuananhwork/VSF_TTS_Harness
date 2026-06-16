@@ -7,21 +7,62 @@ recurring action patterns. See docs/data_goal.md for the field rationale.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
+
+def _detect_log_root() -> Path:
+    """Auto-detect the Claude local-agent-mode-sessions folder for the current OS.
+
+    Priority:
+      1. CLAUDE_LOG_ROOT env var (absolute override for non-standard installs)
+      2. Windows  – glob AppData/Local/Packages/Claude_*/...  (handles any package suffix)
+      3. macOS    – ~/Library/Application Support/Claude/...
+      4. Linux    – ~/.config/Claude/...
+
+    Raises SystemExit with a helpful message if nothing is found so the user
+    knows exactly what to set.
+    """
+    env = os.environ.get("CLAUDE_LOG_ROOT", "").strip()
+    if env:
+        return Path(env)
+
+    home = Path.home()
+    candidates: list[Path] = []
+
+    if sys.platform == "win32":
+        packages = home / "AppData" / "Local" / "Packages"
+        # Glob handles any Claude_<suffix> package family name.
+        candidates = sorted(packages.glob(
+            "Claude_*/LocalCache/Roaming/Claude/local-agent-mode-sessions"
+        ))
+    elif sys.platform == "darwin":
+        candidates = [home / "Library" / "Application Support" / "Claude" / "local-agent-mode-sessions"]
+    else:
+        candidates = [home / ".config" / "Claude" / "local-agent-mode-sessions"]
+
+    for p in candidates:
+        if p.exists():
+            return p
+
+    hint = (
+        "Set CLAUDE_LOG_ROOT=<path> to the folder that contains "
+        "<userId>/<workspaceId>/local_<sessionId>/audit.jsonl"
+    )
+    raise SystemExit(
+        f"[scan] Could not find Claude session logs on this machine.\n{hint}"
+    )
+
+
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
 # Root folder that contains <userId>/<workspaceId>/local_<sessionId>/audit.jsonl
-SOURCE_LOG_ROOT = Path(
-    r"C:\Users\chuba\AppData\Local\Packages\Claude_pzs8sxrjxfjjc"
-    r"\LocalCache\Roaming\Claude\local-agent-mode-sessions"
-)
-
-# SOURCE_LOG_ROOT = Path(r"C:\User\chuba")
+# Auto-detected from the OS; override with CLAUDE_LOG_ROOT env var if needed.
+SOURCE_LOG_ROOT = _detect_log_root()
 
 # Định dạng TARGET_DATE:
 #   - Bỏ trống ("" / None)      → ngày hôm nay
