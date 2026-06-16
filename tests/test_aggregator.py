@@ -126,3 +126,24 @@ def test_to_dict_includes_cleaned_intent_seeds() -> None:
     cluster = aggregate([a])[0]
     d = cluster.to_dict()
     assert d["intent_seeds"] == ["Tóm tắt file"]
+
+
+def test_cluster_metrics_computes_rates_and_behavior() -> None:
+    from _lib.aggregator import cluster_metrics
+    a = Session(
+        session_id="a", process_name="a", title="x", intent_seed=None,
+        total_actions=10, total_user_turns=4, total_input_tokens=0,
+        total_output_tokens=0, duration_seconds=0.0,
+        tool_usage={"click": 10}, repeat_count=3, pivot_count=1,
+    )
+    b = Session(
+        session_id="b", process_name="b", title="x", intent_seed=None,
+        total_actions=10, total_user_turns=4, total_input_tokens=0,
+        total_output_tokens=0, duration_seconds=0.0,
+        tool_usage={"click": 10}, repeat_count=3, pivot_count=1,
+    )
+    m = cluster_metrics([a, b])
+    assert m["recurrence"] == 2
+    assert m["repeat_rate"] == 0.3        # mean(3/10, 3/10)
+    assert m["pivot_rate"] == 0.25        # mean(1/4, 1/4)
+    assert m["behavior_class"] == "inefficient"   # repeat_rate >= 0.2

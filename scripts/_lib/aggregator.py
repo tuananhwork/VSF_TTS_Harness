@@ -168,7 +168,7 @@ class Cluster:
         }
 
 
-def _classify(repeat_rate: float, recurrence: int) -> str:
+def classify_behavior(repeat_rate: float, recurrence: int) -> str:
     if repeat_rate >= 0.2:
         return "inefficient"
     if repeat_rate < 0.1 and recurrence >= 3:
@@ -176,7 +176,10 @@ def _classify(repeat_rate: float, recurrence: int) -> str:
     return "unclear"
 
 
-def _build_cluster(group: list[Session]) -> Cluster:
+def cluster_metrics(group: list[Session]) -> dict:
+    """Recurrence + structural rates + behavior class cho MỘT tập session bất kỳ.
+    Nguồn sự thật duy nhất cho các số này — dùng cho cả tool-ngram cluster lẫn
+    recompute trên merge của LLM. Không mutate input."""
     n = len(group)
     repeat_rate = (
         sum(s.repeat_count / s.total_actions for s in group if s.total_actions)
@@ -186,6 +189,17 @@ def _build_cluster(group: list[Session]) -> Cluster:
         sum(s.pivot_count / s.total_user_turns for s in group if s.total_user_turns)
         / max(1, sum(1 for s in group if s.total_user_turns))
     )
+    return {
+        "recurrence": n,
+        "repeat_rate": repeat_rate,
+        "pivot_rate": pivot_rate,
+        "behavior_class": classify_behavior(repeat_rate, n),
+    }
+
+
+def _build_cluster(group: list[Session]) -> Cluster:
+    n = len(group)
+    m = cluster_metrics(group)
     avg_duration = sum((s.duration_seconds or 0.0) for s in group) / n
     total_tokens = sum(s.total_input_tokens + s.total_output_tokens for s in group)
     # Representative tools = union of top-3 across the group
@@ -197,11 +211,11 @@ def _build_cluster(group: list[Session]) -> Cluster:
         representative_tools=sorted(rep_tools),
         representative_titles=[s.title for s in group if s.title],
         recurrence=n,
-        repeat_rate=repeat_rate,
-        pivot_rate=pivot_rate,
+        repeat_rate=m["repeat_rate"],
+        pivot_rate=m["pivot_rate"],
         avg_duration_seconds=avg_duration,
         total_tokens=total_tokens,
-        behavior_class_hint=_classify(repeat_rate, n),
+        behavior_class_hint=m["behavior_class"],
     )
 
 
