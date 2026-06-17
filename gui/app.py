@@ -60,7 +60,8 @@ def main(page: ft.Page) -> None:
     # ── Pipeline control ─────────────────────────────────────────────────────
 
     def _start_pipeline(
-        date: str, source: str, min_recurrence: int, max_deepdive: int
+        date: str, source: str, min_recurrence: int, max_deepdive: int,
+        provider: str = "claude", ccs_profile: str = "",
     ) -> None:
         nonlocal _q
         _q = queue.Queue()
@@ -69,6 +70,8 @@ def main(page: ft.Page) -> None:
             source=source,
             min_recurrence=min_recurrence,
             max_deepdive=max_deepdive,
+            provider=provider,
+            ccs_profile=ccs_profile,
         )
         _s["running"].reset()
         _show_running()
@@ -121,8 +124,24 @@ def main(page: ft.Page) -> None:
             _s["running"].append_log("Không có session nào cho ngày này. Thử ngày khác.")
         elif kind == "no_candidates":
             _s["running"].append_log("Chưa phát hiện pattern đủ mạnh. Thử quét nhiều ngày hơn.")
+        elif kind == "provider_missing":
+            _show_error_dialog("Không tìm thấy Provider CLI", msg[1])
+            _show_configure()
         elif kind == "done":
             _show_review(msg[1])
+
+    # ── Error dialog ──────────────────────────────────────────────────────────
+
+    def _show_error_dialog(title: str, message: str) -> None:
+        dlg = ft.AlertDialog(
+            modal=True,
+            icon=ft.Icon(ft.Icons.ERROR_OUTLINE_ROUNDED, color=ft.Colors.ERROR, size=32),
+            title=ft.Text(title, text_align=ft.TextAlign.CENTER),
+            content=ft.Text(message, selectable=True),
+            actions=[ft.FilledButton("OK", on_click=lambda e: page.pop_dialog())],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        page.show_dialog(dlg)
 
     # ── Create screens (functions are already defined above) ─────────────────
 

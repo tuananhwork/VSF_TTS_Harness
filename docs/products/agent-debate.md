@@ -66,7 +66,7 @@ mở khóa khi Cost/Business bật lại. MVP trả tiền cho 4 call/candidate 
 ### Việc kỹ thuật còn lại
 
 - `run_claude_json` đang sync → bọc `ThreadPoolExecutor` cho phần debate
-  (`ccs one -p` là subprocess I/O-bound, thread đủ, không cần async).
+  (`ccs <profile> -p` là subprocess I/O-bound, thread đủ, không cần async).
 - Mỗi judge = 1 block instruction tách rời + 1 entry trong list `JUDGES`.
   Bật Cost/Business về sau = thêm 1 block + 1 phần tử list, không đụng orchestration.
 - Schema candidate thêm: `debate: [{judge, stance, axis_score, argument}]`,

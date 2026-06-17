@@ -19,7 +19,7 @@ from _lib.claude_runner import (
 
 
 def _ccs_box(body: str, *, success: bool = True) -> str:
-    """A representative `ccs one` result-formatter box wrapping `body`."""
+    """A representative `ccs <profile>` result-formatter box wrapping `body`."""
     footer = "[OK] Delegation completed" if success else "[X] Delegation failed"
     return (
         "╭──────────────────────────────╮\n"
@@ -73,12 +73,14 @@ def test_strip_ccs_wrapper_passthrough_plain() -> None:
 @pytest.mark.parametrize(
     "value, expected",
     [
-        (None, "CCS_ONE"),
-        ("", "CCS_ONE"),
-        ("   ", "CCS_ONE"),
-        ("CCS_ONE", "CCS_ONE"),
-        ("ccs one", "CCS_ONE"),
-        ("CCS-ONE", "CCS_ONE"),
+        (None, "CLAUDE"),       # unset → default CLAUDE
+        ("", "CLAUDE"),
+        ("   ", "CLAUDE"),
+        ("CCS", "CCS"),
+        ("ccs", "CCS"),
+        ("CCS_ONE", "CCS"),     # legacy alias → CCS
+        ("ccs one", "CCS"),     # legacy alias → CCS
+        ("CCS-ONE", "CCS"),     # legacy alias → CCS
         ("CLAUDE", "CLAUDE"),
         ("claude", "CLAUDE"),
     ],
@@ -110,15 +112,20 @@ def test_run_claude_uses_claude_cli_when_provider_is_claude(
 
 
 @patch.dict("os.environ", {"LLM_PROVIDER": "CLAUDE"}, clear=True)
+@patch("_lib.claude_runner._fixed_candidates", return_value=[])
 @patch("_lib.claude_runner.shutil.which", return_value=None)
 @patch("_lib.claude_runner.subprocess.run")
-def test_run_claude_raises_when_claude_cli_missing(mock_run, _mock_which) -> None:
-    with pytest.raises(ClaudeRunError, match="claude CLI not found"):
+def test_run_claude_raises_when_claude_cli_missing(
+    mock_run, _mock_which, _mock_cands
+) -> None:
+    # Not on PATH, no env override, and no fixed-location fallback → must raise.
+    from _lib.claude_runner import ProviderNotFoundError
+    with pytest.raises(ProviderNotFoundError):
         run_claude("prompt", timeout=10)
     mock_run.assert_not_called()
 
 
-@patch.dict("os.environ", {}, clear=True)
+@patch.dict("os.environ", {"LLM_PROVIDER": "CCS", "CCS_PROFILE": "one"}, clear=True)
 @patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
 def test_run_claude_returns_stripped_stdout(mock_run, _mock_cmd) -> None:
@@ -128,11 +135,12 @@ def test_run_claude_returns_stripped_stdout(mock_run, _mock_cmd) -> None:
     assert run_claude("prompt", timeout=10) == "hello"
     mock_run.assert_called_once()
     cmd = mock_run.call_args[0][0]
+    # ccs <profile> -p <prompt>; profile comes from CCS_PROFILE (here "one").
     assert cmd == ["ccs", "one", "-p", "prompt"]
     assert mock_run.call_args[1]["timeout"] == 10
 
 
-@patch.dict("os.environ", {}, clear=True)
+@patch.dict("os.environ", {"LLM_PROVIDER": "CCS", "CCS_PROFILE": "one"}, clear=True)
 @patch("_lib.claude_runner.shutil.which", return_value="/fake/claude")
 @patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
@@ -145,7 +153,8 @@ def test_run_claude_injects_ccs_claude_path(mock_run, _mock_cmd, _mock_which) ->
     assert env["CCS_CLAUDE_PATH"] == "/fake/claude"
 
 
-@patch.dict("os.environ", {"CCS_CLAUDE_PATH": "/already/set"}, clear=True)
+@patch.dict("os.environ", {"LLM_PROVIDER": "CCS", "CCS_PROFILE": "one",
+                           "CCS_CLAUDE_PATH": "/already/set"}, clear=True)
 @patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
 def test_run_claude_respects_existing_ccs_claude_path(mock_run, _mock_cmd) -> None:
@@ -156,6 +165,7 @@ def test_run_claude_respects_existing_ccs_claude_path(mock_run, _mock_cmd) -> No
     assert mock_run.call_args[1]["env"]["CCS_CLAUDE_PATH"] == "/already/set"
 
 
+@patch.dict("os.environ", {"LLM_PROVIDER": "CCS", "CCS_PROFILE": "one"}, clear=True)
 @patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
 def test_run_claude_raises_on_nonzero_exit(mock_run, _mock_cmd) -> None:
@@ -166,6 +176,7 @@ def test_run_claude_raises_on_nonzero_exit(mock_run, _mock_cmd) -> None:
         run_claude("prompt", timeout=10)
 
 
+@patch.dict("os.environ", {"LLM_PROVIDER": "CCS", "CCS_PROFILE": "one"}, clear=True)
 @patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
 def test_run_claude_json_parses_wrapped_output(mock_run, _mock_cmd) -> None:
@@ -175,6 +186,7 @@ def test_run_claude_json_parses_wrapped_output(mock_run, _mock_cmd) -> None:
     assert run_claude_json("prompt") == [{"a": 1}]
 
 
+@patch.dict("os.environ", {"LLM_PROVIDER": "CCS", "CCS_PROFILE": "one"}, clear=True)
 @patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
 def test_run_claude_json_retries_when_first_output_is_garbage(mock_run, _mock_cmd) -> None:
@@ -191,6 +203,7 @@ def test_run_claude_json_retries_when_first_output_is_garbage(mock_run, _mock_cm
     assert mock_run.call_count == 2
 
 
+@patch.dict("os.environ", {"LLM_PROVIDER": "CCS", "CCS_PROFILE": "one"}, clear=True)
 @patch("_lib.claude_runner._ccs_command", return_value=["ccs"])
 @patch("_lib.claude_runner.subprocess.run")
 def test_run_claude_json_propagates_second_failure(mock_run, _mock_cmd) -> None:

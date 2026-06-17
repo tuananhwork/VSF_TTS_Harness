@@ -1,7 +1,7 @@
 """Cách B debate: run each judge over the same facts+traces in parallel, then
 collect their verdicts for the consolidator.
 
-`run_claude_json` is synchronous and `ccs one -p` is subprocess I/O-bound, so a
+`run_claude_json` is synchronous and `ccs <profile> -p` is subprocess I/O-bound, so a
 thread pool is enough — no async needed. A single judge timing out must not tank
 the candidate: its failure is recorded as a verdict with an `error` field so the
 consolidator still sees the gap.

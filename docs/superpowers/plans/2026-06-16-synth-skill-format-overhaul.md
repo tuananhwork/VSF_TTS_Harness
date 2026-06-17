@@ -6,7 +6,7 @@
 
 **Architecture:** One LLM reasoning call (`render_skill`) turns a Vietnamese candidate into strict English JSON (description, capabilities, red flags, golden tests). A pure-Python assembler (`assemble_skill`) deterministically builds the folder from that JSON + raw candidate. A pure-Python validator (`validate_skill`) gates the result. Path A (skill-creator headless) and the old bilingual template path are removed.
 
-**Tech Stack:** Python 3.12, `click`, `jinja2`, `pyyaml`, `pytest`; LLM via `ccs one -p` through `_lib/claude_runner.run_claude_json`.
+**Tech Stack:** Python 3.12, `click`, `jinja2`, `pyyaml`, `pytest`; LLM via `ccs <profile> -p` through `_lib/claude_runner.run_claude_json`.
 
 **Spec:** `docs/superpowers/specs/2026-06-16-synth-skill-format-overhaul-design.md`
 

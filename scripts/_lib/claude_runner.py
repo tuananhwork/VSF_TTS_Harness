@@ -2,19 +2,21 @@
 
 The LLM provider is selected by the ``LLM_PROVIDER`` environment variable:
 
-- ``CCS_ONE`` (default) — route through the CCS delegation CLI (`ccs one -p`),
-  using the configured "one" profile. CCS wraps task output in a formatted box
-  (round header + info table + footer); the box is peeled off by
+- ``CLAUDE`` (default) — invoke the `claude` CLI directly in headless mode
+  (`claude -p`). Output is plain stdout (no wrapper box).
+- ``CCS`` — route through the CCS delegation CLI as `ccs <profile> -p`, where
+  ``<profile>`` is whatever the user named their CCS profile (e.g. `api`,
+  `one`, `hello`) and is read from the ``CCS_PROFILE`` env var. The profile is
+  NOT fixed — there is no built-in "one" profile. CCS wraps task output in a
+  formatted box (round header + info table + footer); the box is peeled off by
   `_strip_ccs_wrapper` so the delegated task's raw stdout can be JSON-parsed.
-- ``CLAUDE`` — invoke the `claude` CLI directly in headless mode (`claude -p`),
-  bypassing CCS entirely. Output is plain stdout (no wrapper box).
 
-The value is case-insensitive and tolerates spaces/hyphens (`CCS ONE`,
-`ccs-one` all resolve to ``CCS_ONE``).
+``LLM_PROVIDER`` is case-insensitive and tolerates spaces/hyphens; the legacy
+value ``CCS_ONE`` is still accepted and maps to ``CCS``.
 
 Owns:
 - provider selection from ``LLM_PROVIDER``
-- subprocess invocation with timeout (`ccs one -p` or `claude -p`)
+- subprocess invocation with timeout (`ccs <profile> -p` or `claude -p`)
 - non-zero exit detection
 - stripping the CCS result-formatter box from stdout (no-op for plain output)
 - best-effort JSON block extraction from prose-padded output
@@ -40,24 +42,30 @@ CLAUDE_BIN = "claude"
 
 
 def _ccs_profile() -> str:
+    """The CCS profile name (user-defined, e.g. `api`/`one`/`hello`) from env.
+
+    There is no default — `ccs` is always invoked as `ccs <profile>`, so the
+    profile must be chosen explicitly (the GUI's "CCS profile" field sets it).
+    """
     val = os.environ.get("CCS_PROFILE", "").strip()
     if not val:
         raise ClaudeRunError(
-            "CCS_PROFILE is not set. Pass --ccs-profile NAME when using --llm-provider=ccs-one."
+            "CCS_PROFILE chưa được đặt. Khi dùng provider CCS, hãy đặt "
+            "CCS_PROFILE = tên profile của bạn (vd: api, one, hello)."
         )
     return val
 
 LLM_PROVIDER_ENV = "LLM_PROVIDER"
 PROVIDER_CLAUDE = "CLAUDE"
-PROVIDER_CCS_ONE = "CCS_ONE"
+PROVIDER_CCS = "CCS"
 
 
 def _provider() -> str:
-    """Resolve the LLM provider from ``LLM_PROVIDER`` (default ``CCS_ONE``).
+    """Resolve the LLM provider from ``LLM_PROVIDER`` (default ``CLAUDE``).
 
-    Case-insensitive; spaces and hyphens are normalized (`CCS ONE`, `ccs-one`).
-    Raises ClaudeRunError on an unrecognized value rather than silently falling
-    back, so a misconfigured switch fails loudly.
+    Case-insensitive; spaces/hyphens are normalized. Accepts ``CLAUDE`` and
+    ``CCS`` (plus the legacy alias ``CCS_ONE`` → ``CCS``). Raises ClaudeRunError
+    on an unrecognized value rather than silently falling back.
     """
     raw = os.environ.get(LLM_PROVIDER_ENV)
     if not raw or not raw.strip():
@@ -65,11 +73,11 @@ def _provider() -> str:
     normalized = raw.strip().upper().replace(" ", "_").replace("-", "_")
     if normalized == PROVIDER_CLAUDE:
         return PROVIDER_CLAUDE
-    if normalized in (PROVIDER_CCS_ONE, "CCS", "ONE"):
-        return PROVIDER_CCS_ONE
+    if normalized in (PROVIDER_CCS, "CCS_ONE"):  # CCS_ONE = legacy alias
+        return PROVIDER_CCS
     raise ClaudeRunError(
         f"{LLM_PROVIDER_ENV}={raw!r} is invalid; expected "
-        f"{PROVIDER_CLAUDE!r} or {PROVIDER_CCS_ONE!r}"
+        f"{PROVIDER_CLAUDE!r} or {PROVIDER_CCS!r}"
     )
 
 
@@ -77,7 +85,7 @@ def provider_label() -> str:
     """Human-readable label for the active provider command (no prompt).
 
     Returns ``claude -p`` or ``ccs <profile> -p``, reflecting the real
-    ``LLM_PROVIDER``/``CCS_PROFILE`` so log lines don't hardcode ``ccs one -p``.
+    ``LLM_PROVIDER``/``CCS_PROFILE`` so the profile is never hardcoded.
     Never raises (uses a placeholder when the profile is unset) — it's only a label.
     """
     if _provider() == PROVIDER_CLAUDE:
@@ -88,6 +96,14 @@ def provider_label() -> str:
 
 class ClaudeRunError(RuntimeError):
     """Raised when the provider command exits non-zero or output cannot be parsed."""
+
+
+class ProviderNotFoundError(ClaudeRunError):
+    """Raised when the provider CLI (claude/ccs) can't be located anywhere.
+
+    Carries an actionable, user-facing message (PATH + the fixed locations we
+    tried + how to override) so the GUI can show a clear fix hint.
+    """
 
 
 class ClaudeRunCancelled(Exception):
@@ -217,6 +233,62 @@ def extract_json_block(raw: str) -> str:
     raise ValueError("unbalanced JSON brackets in output")
 
 
+def _fixed_candidates(name: str) -> list[Path]:
+    """Well-known install locations for `name` (claude/ccs), in priority order.
+
+    Used as a fallback when the inherited %PATH% doesn't resolve the CLI — which
+    happens when the GUI .exe is launched from Explorer with a stale/truncated
+    PATH (Windows cuts PATH at ~2047 chars; the claude/npm dirs sit at the tail).
+    """
+    appdata = os.environ.get("APPDATA")
+    local = os.environ.get("LOCALAPPDATA")
+    # `claude` native installer drops into ~/.local/bin; npm global into %APPDATA%/npm.
+    stems = {
+        "claude": ["claude.exe", "claude.cmd", "claude"],
+        "ccs": ["ccs.cmd", "ccs.exe", "ccs"],
+    }[name]
+    dirs: list[Path] = []
+    try:
+        dirs.append(Path.home() / ".local" / "bin")
+    except RuntimeError:
+        pass  # home not resolvable (no HOME/USERPROFILE) — skip those candidates
+    if appdata:
+        dirs.append(Path(appdata) / "npm")
+    if local:
+        dirs.append(Path(local) / "Programs" / name)
+    return [d / stem for d in dirs for stem in stems]
+
+
+def _resolve_cli(name: str, env_override: str) -> str | None:
+    """Locate the `name` CLI: explicit env override → PATH → fixed locations.
+
+    `env_override` (e.g. CLAUDE_BIN/CCS_BIN) wins if it points at an existing
+    file — the escape hatch surfaced in the not-found error message.
+    """
+    override = os.environ.get(env_override, "").strip()
+    if override:
+        p = Path(override)
+        if p.is_file():
+            return str(p)
+    found = shutil.which(name)
+    if found:
+        return found
+    for cand in _fixed_candidates(name):
+        if cand.is_file():
+            return str(cand)
+    return None
+
+
+def _not_found_error(name: str, env_override: str) -> "ProviderNotFoundError":
+    tried = "\n".join(f"  • {c}" for c in _fixed_candidates(name))
+    return ProviderNotFoundError(
+        f"Không tìm thấy `{name}` CLI.\n\n"
+        f"Đã thử %PATH% và các vị trí:\n{tried}\n\n"
+        f"Cách sửa: cài `{name}`, hoặc đặt biến môi trường "
+        f"{env_override} = đường dẫn tuyệt đối tới {name}."
+    )
+
+
 def _ccs_command() -> list[str]:
     """Resolve how to invoke `ccs`.
 
@@ -224,10 +296,13 @@ def _ccs_command() -> list[str]:
     which mangles prompts containing `%`, `&`, or quotes. When the JS entrypoint
     sits next to the launcher (the npm global-install layout), call it with
     `node` directly to bypass cmd.exe. Otherwise fall back to the launcher.
+
+    Resolution is PATH-independent (override env → PATH → fixed locations) so the
+    bundled GUI works even when launched without the dev shell's PATH.
     """
-    launcher = shutil.which(CCS_BIN)
+    launcher = _resolve_cli(CCS_BIN, "CCS_BIN")
     if launcher is None:
-        raise ClaudeRunError(f"ccs CLI not found on PATH ({CCS_BIN})")
+        raise _not_found_error("ccs", "CCS_BIN")
     entry = (
         Path(launcher).parent
         / "node_modules" / "@kaitranntt" / "ccs" / "dist" / "ccs.js"
@@ -242,11 +317,12 @@ def _claude_command() -> list[str]:
     """Resolve how to invoke `claude` in headless mode.
 
     Returns the argv prefix up to (but excluding) the prompt, i.e. ``[claude,
-    "-p"]``. Raises ClaudeRunError if the `claude` CLI is not on PATH.
+    "-p"]``. Resolution is PATH-independent (override env → PATH → fixed
+    locations). Raises ProviderNotFoundError if `claude` can't be found anywhere.
     """
-    launcher = shutil.which(CLAUDE_BIN)
+    launcher = _resolve_cli(CLAUDE_BIN, "CLAUDE_BIN")
     if launcher is None:
-        raise ClaudeRunError(f"claude CLI not found on PATH ({CLAUDE_BIN})")
+        raise _not_found_error("claude", "CLAUDE_BIN")
     return [launcher, "-p"]
 
 
@@ -281,7 +357,8 @@ def _subprocess_env() -> dict[str, str]:
     """
     env = os.environ.copy()
     if not env.get("CCS_CLAUDE_PATH"):
-        claude = shutil.which("claude")
+        # PATH-independent resolve so ccs finds claude even on a stale/truncated PATH.
+        claude = _resolve_cli("claude", "CLAUDE_BIN")
         if claude:
             env["CCS_CLAUDE_PATH"] = claude
     return env
@@ -358,7 +435,7 @@ def run_claude(
 ) -> str:
     """Invoke the selected provider with `<prompt>` and return its stdout.
 
-    Routes to `claude -p` or `ccs one -p` per the ``LLM_PROVIDER`` env var
+    Routes to `claude -p` or `ccs <profile> -p` per the ``LLM_PROVIDER`` env var
     (see module docstring). The CCS result-formatter box is stripped before
     returning (a no-op for the plain `claude` output). Raises ClaudeRunError on
     non-zero exit, timeout, or a missing CLI.

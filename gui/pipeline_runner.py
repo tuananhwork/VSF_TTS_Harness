@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import shutil
 import sys
@@ -19,7 +20,7 @@ for _p in [_HERE, _HERE.parent / "scripts"]:
 import scan as _scan
 import judge as _judge
 import synth as _synth
-from _lib.claude_runner import CancelToken, ClaudeRunCancelled
+from _lib.claude_runner import CancelToken, ClaudeRunCancelled, ProviderNotFoundError
 
 
 @dataclass
@@ -30,6 +31,8 @@ class PipelineParams:
     max_deepdive: int = 5
     top_candidates: int = 5
     timeout: float = 300.0
+    provider: str = "claude"   # "claude" | "ccs"
+    ccs_profile: str = ""      # tên profile khi provider == "ccs"
 
 
 @dataclass
@@ -93,8 +96,22 @@ class PipelineRunner(threading.Thread):
     def _log(self, msg: str) -> None:
         self._q.put(("log", msg))
 
+    def _apply_provider_env(self) -> None:
+        """Map GUI provider choice → env vars that claude_runner reads.
+
+        Same-process desktop app: setting os.environ before judge/synth run is
+        enough (run_claude resolves provider/profile from env at call time).
+        """
+        p = self._params
+        if p.provider == "ccs":
+            os.environ["LLM_PROVIDER"] = "CCS"
+            os.environ["CCS_PROFILE"] = p.ccs_profile
+        else:
+            os.environ["LLM_PROVIDER"] = "CLAUDE"
+
     def run(self) -> None:
         p = self._params
+        self._apply_provider_env()
 
         # ── Scan ────────────────────────────────────────────────
         self._q.put(("step_start", "scan"))
@@ -134,6 +151,9 @@ class PipelineRunner(threading.Thread):
             )
         except ClaudeRunCancelled:
             return  # user huỷ — call LLM đã bị kill, thoát yên lặng
+        except ProviderNotFoundError as e:
+            self._q.put(("provider_missing", str(e)))
+            return
         except Exception as e:
             self._q.put(("step_error", "judge", str(e)))
             return
@@ -154,6 +174,9 @@ class PipelineRunner(threading.Thread):
             )
         except ClaudeRunCancelled:
             return  # user huỷ — thoát yên lặng
+        except ProviderNotFoundError as e:
+            self._q.put(("provider_missing", str(e)))
+            return
         except Exception as e:
             self._q.put(("step_error", "synth", str(e)))
             return
