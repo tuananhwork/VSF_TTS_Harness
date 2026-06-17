@@ -36,6 +36,8 @@ class Session:
     failure_count: int
     tool_sequence: list[str] = field(default_factory=list)
     source_file: str = ""
+    outputs_names: list[str] = field(default_factory=list)
+    focused_apps: list[str] = field(default_factory=list)
 
 
 def _read_summary(jsonl_path: Path) -> dict | None:
@@ -74,6 +76,8 @@ def load_sessions(sessions_dir: Path) -> list[Session]:
             failure_count=int(rec.get("failure_count") or 0),
             tool_sequence=list(rec.get("tool_sequence") or []),
             source_file=jsonl_path.name,
+            outputs_names=list(rec.get("outputs_names") or []),
+            focused_apps=list(rec.get("focused_apps") or []),
         ))
     return sessions
 
@@ -153,7 +157,6 @@ class Cluster:
             "process_names": [s.process_name for s in self.sessions],
             "source_files": [s.source_file for s in self.sessions],
             "representative_tools": self.representative_tools,
-            "representative_titles": self.representative_titles,
             "recurrence": self.recurrence,
             "repeat_rate": round(self.repeat_rate, 3),
             "failure_rate": round(self.failure_rate, 3),
@@ -167,6 +170,10 @@ class Cluster:
             "titles": [s.title for s in self.sessions],
             "intent_seeds": [_clean_intent(s.intent_seed) for s in self.sessions],
             "tool_sequence_per_session": [s.tool_sequence for s in self.sessions],
+            # Artifact + domain signals (data_goal L5/L7): output file names reveal
+            # the recurring task type (.md/.xlsx/.pptx…); focused apps the domain.
+            "outputs_per_session": [s.outputs_names for s in self.sessions],
+            "focused_apps_per_session": [s.focused_apps for s in self.sessions],
         }
 
 

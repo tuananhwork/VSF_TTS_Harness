@@ -51,6 +51,49 @@ def test_load_trace_truncates_long_text(tmp_path: Path) -> None:
     assert len(trace[0]["text"]) <= 60  # 50 + ellipsis marker
 
 
+def test_load_trace_surfaces_action_input_text_and_failure(tmp_path: Path) -> None:
+    p = tmp_path / "sess.jsonl"
+    _write_session(p, "sid-1", [
+        {"role": "assistant", "user_text": None, "feedback_flag": None,
+         "text_summary": "Đã ghi PRD",
+         "actions": [
+             {"tool_name": "Write",
+              "input_summary": {"file_path": "PRD.md", "content": "hello"},
+              "result_ok": True},
+             {"tool_name": "Bash", "input_summary": {"command": "pytest"},
+              "result_ok": False, "error_kind": "exit 1: boom"},
+         ]},
+    ])
+    step = load_trace(p)[0]
+    assert step["text"] == "Đã ghi PRD"                       # assistant output kept
+    acts = {a["tool"]: a for a in step["actions"]}
+    assert "file_path" in acts["Write"]["input"]              # input shape kept
+    assert acts["Bash"]["ok"] is False                        # failure surfaced
+    assert "boom" in acts["Bash"]["error"]                    # error_kind surfaced
+
+
+def test_load_trace_keeps_clean_turn_light(tmp_path: Path) -> None:
+    # No input / no failure / no text → no `actions` or `text` keys (stay compact).
+    p = tmp_path / "sess.jsonl"
+    _write_session(p, "sid-1", [
+        {"role": "assistant", "user_text": None, "feedback_flag": None,
+         "actions": [{"tool_name": "Read"}]},
+    ])
+    step = load_trace(p)[0]
+    assert step == {"role": "assistant", "tools": ["Read"], "feedback": None}
+
+
+def test_load_trace_caps_action_input_length(tmp_path: Path) -> None:
+    p = tmp_path / "sess.jsonl"
+    _write_session(p, "sid-1", [
+        {"role": "assistant", "user_text": None, "feedback_flag": None,
+         "actions": [{"tool_name": "Write",
+                      "input_summary": {"content": "y" * 5000}}]},
+    ])
+    step = load_trace(p, max_input=80)[0]
+    assert len(step["actions"][0]["input"]) <= 90  # 80 + ellipsis/json overhead
+
+
 def test_load_traces_keys_by_session_id(tmp_path: Path) -> None:
     p1 = tmp_path / "a.jsonl"
     p2 = tmp_path / "b.jsonl"

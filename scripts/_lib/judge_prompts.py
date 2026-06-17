@@ -26,6 +26,9 @@ lẻ). Mỗi group có:
 - `repeat_rate` / `failure_rate` / `behavior_class_hint`: tín hiệu CẤU TRÚC —
   `repeat_rate` = tỉ lệ rework (chạy lại tool VỪA FAIL); `failure_rate` = tỉ lệ
   action lỗi (result_ok=False). Cao = session nhiều ma sát.
+- `outputs_per_session`: tên file kết quả mỗi session (vd `*.md`, `*.xlsx`,
+  `*.pptx`) — loại artifact lặp lại là TÍN HIỆU MẠNH để nhận diện cùng loại task.
+- `focused_apps_per_session`: app/cửa sổ user đang thao tác — tín hiệu domain.
 
 NHIỆM VỤ: tìm các task/flow LẶP LẠI xuyên TẤT CẢ session (merge session từ nhiều
 group nếu intent_seeds + tool_sequence giống nhau về ý nghĩa). Với mỗi pattern:

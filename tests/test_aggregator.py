@@ -118,6 +118,33 @@ def test_aggregate_includes_singleton_groups(sessions_dir: Path) -> None:
     assert total == len(sessions)
 
 
+def test_to_dict_surfaces_outputs_and_drops_dup_titles() -> None:
+    s = Session(
+        session_id="a", process_name="a", title="PRD", intent_seed=None,
+        total_actions=1, total_user_turns=1, total_input_tokens=0,
+        total_output_tokens=0, duration_seconds=0.0, tool_usage={"Write": 1},
+        repeat_count=0, failure_count=0,
+        outputs_names=["PRD.md"], focused_apps=["Figma"],
+    )
+    d = aggregate([s])[0].to_dict()
+    assert d["outputs_per_session"] == [["PRD.md"]]          # artifact signal added
+    assert d["focused_apps_per_session"] == [["Figma"]]      # domain signal added
+    assert "representative_titles" not in d                  # duplicate title dropped
+    assert d["titles"] == ["PRD"]                            # titles still present
+
+
+def test_load_sessions_reads_outputs_and_focused_apps(tmp_path: Path) -> None:
+    import json
+    p = tmp_path / "s.jsonl"
+    p.write_text(json.dumps({
+        "record_type": "session_summary", "session_id": "a",
+        "outputs_names": ["report.xlsx"], "focused_apps": ["Excel"],
+    }) + "\n", encoding="utf-8")
+    s = load_sessions(tmp_path)[0]
+    assert s.outputs_names == ["report.xlsx"]
+    assert s.focused_apps == ["Excel"]
+
+
 def test_to_dict_includes_cleaned_intent_seeds() -> None:
     a = _mk_session(
         "a", {"Read": 1}, title="ConvMixer file summary",
