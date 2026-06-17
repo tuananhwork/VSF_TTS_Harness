@@ -77,14 +77,19 @@ def run_judge(
     installed_skills_dir: Path | None = None,
     log_fn=print,
     cancel: CancelToken | None = None,
+    status_fn=None,
 ) -> Path:
     """Chạy judge pipeline. Trả về Path tới candidate_skills.json.
 
     `cancel` (CancelToken) cho phép huỷ thật: mọi call LLM đi qua `runner` đã bind
     token, và ta kiểm tra `raise_if_cancelled()` ở các mốc để dừng ngay.
+    `status_fn(text)` (tuỳ chọn) cập nhật thanh 'live' trước mỗi call LLM (UX).
     """
     if installed_skills_dir is None:
         installed_skills_dir = Path.home() / ".claude" / "skills"
+
+    if status_fn is None:
+        status_fn = lambda *_: None  # noqa: E731
 
     # Mọi call LLM trong judge đi qua runner này → tự huỷ được khi cancel.
     runner = partial(run_claude_json, cancel=cancel)
@@ -116,6 +121,7 @@ def run_judge(
         installed = _list_installed_skills(installed_skills_dir)
 
         log_fn(f"[judge] triage: `{provider_label()}` (timeout={timeout}s)")
+        status_fn(f"Triage · {len(clusters)} nhóm session")
         triage_prompt = build_triage_prompt(cluster_dicts, installed)
         triage = runner(triage_prompt, timeout=timeout)
         (out_dir / "_raw_triage.txt").write_text(
@@ -128,13 +134,15 @@ def run_judge(
         accepted_triage = accepted_triage[:max_deepdive]
 
         enriched: list[dict] = []
-        for c in accepted_triage:
+        n_dd = len(accepted_triage)
+        for i, c in enumerate(accepted_triage, 1):
             _check_cancel()  # dừng ngay trước khi tốn LLM cho candidate kế tiếp
             src = c.get("evidence", {}).get("source_files", [])
             traces = load_traces(src, sessions_dir)
             log_fn(f"[judge] debate: {c['name']} ({len(traces)} traces, {len(JUDGES)} judges)")
 
             try:
+                status_fn(f"Trích xuất: {c['name']} ({i}/{n_dd})")
                 facts = runner(build_extract_prompt(c, traces), timeout=timeout)
                 (out_dir / f"_raw_extract_{c['name']}.txt").write_text(
                     json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -142,6 +150,7 @@ def run_judge(
                 log_fn(f"[judge]   ! extract failed ({e})")
                 facts = {"extract_error": str(e)}
 
+            status_fn(f"Tranh luận: {c['name']} ({i}/{n_dd})")
             verdicts = run_debate(
                 c, facts, traces, judges=JUDGES, runner=runner, timeout=timeout
             )
@@ -150,6 +159,7 @@ def run_judge(
             _check_cancel()  # debate nuốt exception nội bộ → kiểm tra lại ở đây
 
             try:
+                status_fn(f"Tổng hợp: {c['name']} ({i}/{n_dd})")
                 verdict = runner(
                     build_consolidator_prompt(c, facts, verdicts), timeout=timeout)
                 (out_dir / f"_raw_consolidate_{c['name']}.txt").write_text(

@@ -139,11 +139,15 @@ def run_synth(
     timeout: float = 120.0,
     log_fn=print,
     cancel: CancelToken | None = None,
+    status_fn=None,
 ) -> tuple[list[dict], Path]:
     """Synthesize top-N candidates. Trả về (results, out_dir).
 
     `cancel` (CancelToken) huỷ thật: call render LLM đi qua runner đã bind token.
+    `status_fn(text)` (tuỳ chọn) cập nhật thanh 'live' trước mỗi call render (UX).
     """
+    if status_fn is None:
+        status_fn = lambda *_: None  # noqa: E731
     runner = partial(run_claude_json, cancel=cancel)
     today = _date.today().isoformat()
     out_dir = DATA_ROOT / f"skills_{today}_proposal"
@@ -157,10 +161,12 @@ def run_synth(
 
     now = datetime.now()
     results: list[dict] = []
-    for c in top_n:
+    n_top = len(top_n)
+    for i, c in enumerate(top_n, 1):
         if cancel is not None:
             cancel.raise_if_cancelled()
         log_fn(f"[synth] -> {c['name']}")
+        status_fn(f"Sinh skill: {c['name']} ({i}/{n_top})")
         results.append(_synthesize_one(c, batch_names, out_dir, timeout, now, runner))
 
     (out_dir / "_proposal_meta.json").write_text(

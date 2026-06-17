@@ -96,6 +96,10 @@ class PipelineRunner(threading.Thread):
     def _log(self, msg: str) -> None:
         self._q.put(("log", msg))
 
+    def _status(self, msg: str) -> None:
+        """Cập nhật thanh 'live' (call LLM đang chạy) — tách khỏi log thường."""
+        self._q.put(("status", msg))
+
     def _apply_provider_env(self) -> None:
         """Map GUI provider choice → env vars that claude_runner reads.
 
@@ -148,6 +152,7 @@ class PipelineRunner(threading.Thread):
                 timeout=p.timeout,
                 log_fn=self._log,
                 cancel=self._cancel,
+                status_fn=self._status,
             )
         except ClaudeRunCancelled:
             return  # user huỷ — call LLM đã bị kill, thoát yên lặng
@@ -171,6 +176,7 @@ class PipelineRunner(threading.Thread):
                 timeout=p.timeout,
                 log_fn=self._log,
                 cancel=self._cancel,
+                status_fn=self._status,
             )
         except ClaudeRunCancelled:
             return  # user huỷ — thoát yên lặng

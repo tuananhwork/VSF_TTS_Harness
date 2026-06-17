@@ -93,6 +93,10 @@ def main(page: ft.Page) -> None:
         while True:
             alive = bool(_runner[0] and _runner[0].is_alive())
             _drain()
+            # Tick the live elapsed counter (~once/sec) so a long LLM call shows
+            # motion even when no queue messages arrive during it.
+            if _s["running"].tick_elapsed():
+                page.update()
             if not alive and _q.empty():
                 break
             await asyncio.sleep(0.05)
@@ -113,18 +117,23 @@ def main(page: ft.Page) -> None:
         kind = msg[0]
         if kind == "log":
             _s["running"].append_log(msg[1])
+        elif kind == "status":
+            _s["running"].set_activity(msg[1])
         elif kind == "step_start":
             _s["running"].update_step("running", msg[1])
         elif kind == "step_done":
             _s["running"].update_step("done", msg[1])
+            _s["running"].clear_activity()
         elif kind == "step_error":
             _s["running"].update_step("error", msg[1])
             _s["running"].append_error(msg[2])
+            _s["running"].clear_activity()
         elif kind == "no_sessions":
             _s["running"].append_log("Không có session nào cho ngày này. Thử ngày khác.")
         elif kind == "no_candidates":
             _s["running"].append_log("Chưa phát hiện pattern đủ mạnh. Thử quét nhiều ngày hơn.")
         elif kind == "provider_missing":
+            _s["running"].clear_activity()
             _show_error_dialog("Không tìm thấy Provider CLI", msg[1])
             _show_configure()
         elif kind == "done":

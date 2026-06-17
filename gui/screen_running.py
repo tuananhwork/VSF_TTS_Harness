@@ -1,6 +1,7 @@
 """Màn hình 2 — Running: stepper ngang + log output."""
 from __future__ import annotations
 
+import time
 from typing import Callable
 
 import flet as ft
@@ -21,6 +22,9 @@ class RunningScreen:
         self._badges: dict[str, ft.Container] = {}
         self._labels: dict[str, ft.Text] = {}
         self._connectors: list[ft.Container] = []
+        # Live "đang gọi LLM" bar (spinner + nhãn + đồng hồ elapsed).
+        self._activity_label: str | None = None
+        self._activity_start: float = 0.0
 
         # Clipboard service phải gắn vào page mới dùng được (Flet 0.85+).
         self._clipboard = ft.Clipboard()
@@ -87,6 +91,24 @@ class RunningScreen:
             ),
         ])
 
+        # ── Live activity bar (ẩn khi không có call LLM đang chạy) ───────────
+        self._activity_ring = ft.ProgressRing(width=16, height=16, stroke_width=2)
+        self._activity_text = ft.Text(
+            "", theme_style=ft.TextThemeStyle.BODY_SMALL, color=ft.Colors.PRIMARY,
+            weight=ft.FontWeight.W_500,
+        )
+        self._activity_bar = ft.Container(
+            content=ft.Row(
+                [self._activity_ring, self._activity_text],
+                spacing=T.SM, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            visible=False,
+            padding=T.pad_xy(T.MD, T.SM),
+            bgcolor=T.SURFACE_ALT,
+            border=T.hairline(),
+            border_radius=T.RADIUS_SM,
+        )
+
         self.container = ft.Container(
             content=ft.Column(
                 [
@@ -95,6 +117,8 @@ class RunningScreen:
                     T.gap(T.LG),
                     stepper,
                     T.gap(T.LG),
+                    self._activity_bar,
+                    T.gap(T.SM),
                     log_card,
                     T.gap(T.MD),
                     btn_row,
@@ -133,6 +157,31 @@ class RunningScreen:
             self._set_step("pending", step, i)
         for c in self._connectors:
             c.bgcolor = T.HAIRLINE
+        self.clear_activity()
+
+    # ── Live activity bar ─────────────────────────────────────────────────────
+
+    def set_activity(self, label: str) -> None:
+        """Hiện thanh live cho call LLM đang chạy + bắt đầu đếm elapsed."""
+        self._activity_label = label
+        self._activity_start = time.monotonic()
+        self._activity_text.value = label
+        self._activity_bar.visible = True
+
+    def clear_activity(self) -> None:
+        self._activity_label = None
+        self._activity_bar.visible = False
+
+    def tick_elapsed(self) -> bool:
+        """Cập nhật giây trôi qua. Trả True khi nhãn đổi (≈mỗi 1s) để caller update."""
+        if not self._activity_label:
+            return False
+        secs = int(time.monotonic() - self._activity_start)
+        new = f"{self._activity_label}  ·  {secs}s"
+        if self._activity_text.value != new:
+            self._activity_text.value = new
+            return True
+        return False
 
     def update_step(self, status: str, step: str) -> None:
         self._set_step(status, step, _STEPS.index(step))
