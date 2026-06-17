@@ -15,6 +15,21 @@ from _lib.claude_runner import run_claude_json
 
 _MAX_CAPABILITIES = 6
 
+# Only the fields that inform the skill's CONTENT. Everything else on the
+# enriched candidate (debate verdicts, evidence ids, metrics, scores,
+# consolidator notes) is pipeline bookkeeping the render prompt explicitly tells
+# the model NOT to emit — so we drop it here to cut distractor noise.
+_RENDER_FIELDS = (
+    "name", "skill_type", "behavior_class", "trigger_intent",
+    "action_template", "good_points", "weak_points", "improvement_notes",
+    "golden_tests", "risk_flags", "core_lesson",
+)
+
+
+def _project_for_render(candidate: dict[str, Any]) -> dict[str, Any]:
+    """Keep only the content-bearing fields (see _RENDER_FIELDS)."""
+    return {k: candidate[k] for k in _RENDER_FIELDS if k in candidate}
+
 
 def build_render_prompt(candidate: dict[str, Any], batch_names: list[str]) -> str:
     """Compose the strict-JSON render prompt for one candidate.
@@ -23,6 +38,7 @@ def build_render_prompt(candidate: dict[str, Any], batch_names: list[str]) -> st
     model may reference the OTHERS under `related` (we have no global index yet).
     """
     others = [n for n in batch_names if n != candidate.get("name")]
+    candidate = _project_for_render(candidate)
     return f"""You are turning an observed-behavior skill candidate into a clean,
 English-only Agent Skill. Output STRICT JSON only — no prose, no markdown fences.
 

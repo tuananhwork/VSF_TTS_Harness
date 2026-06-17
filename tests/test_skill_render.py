@@ -29,6 +29,25 @@ def test_build_render_prompt_includes_candidate_batch_and_rules() -> None:
     assert "OTHER SKILLS IN THIS BATCH" in prompt
 
 
+def test_build_render_prompt_drops_pipeline_noise() -> None:
+    enriched = {
+        **CANDIDATE,
+        "evidence": {"session_ids": ["local_abc123"], "source_files": ["x.jsonl"]},
+        "metrics": {"recurrence": 3},
+        "final_score": {"recurrence": 4},
+        "debate": [{"judge": "efficiency", "argument": "NOISE_ARG"}],
+        "consolidator_note": "NOISE_NOTE",
+    }
+    prompt = build_render_prompt(enriched, [])
+    # Content-bearing fields stay.
+    assert "test-and-report" in prompt
+    assert "lặp bash 3 lần" in prompt
+    # Pipeline bookkeeping is stripped from the render input.
+    assert "NOISE_ARG" not in prompt
+    assert "NOISE_NOTE" not in prompt
+    assert "local_abc123" not in prompt
+
+
 def test_render_skill_uses_injected_runner() -> None:
     captured = {}
 
