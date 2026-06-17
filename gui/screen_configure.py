@@ -14,6 +14,22 @@ _SOURCES = [
     ("claude-code", "Code", ft.Icons.TERMINAL),
 ]
 
+# TODO(claude-code): tạm DISABLE nguồn "Code". Lý do: prompt triage cho claude-code
+# quá lớn (vd ~264K ký tự với ~200 sessions) → vượt giới hạn command-line Windows
+# (~32767 ký tự) khi prompt được truyền làm argv, khiến subprocess fail và bị báo
+# nhầm là "claude CLI not found". Cần tối ưu trước khi bật lại:
+#   (1) truyền prompt qua STDIN thay vì argv (claude -p và ccs đều đọc stdin), và
+#   (2) chia batch sessions/clusters cho judge để prompt không phình.
+# Khi đã làm xong, bỏ "claude-code" khỏi _DISABLED_SOURCES.
+_DISABLED_SOURCES = {"claude-code"}
+_DISABLED_TOOLTIP = "Tính năng đang phát triển"
+
+# LLM provider chạy judge/synth. (value, nhãn, icon)
+_PROVIDERS = [
+    ("claude", "Claude", ft.Icons.AUTO_AWESOME),
+    ("ccs", "CCS", ft.Icons.HUB_OUTLINED),
+]
+
 
 class ConfigureScreen:
     def __init__(self, page: ft.Page, on_run: Callable) -> None:
@@ -21,6 +37,7 @@ class ConfigureScreen:
         self._on_run = on_run
         self._selected_date: date = date.today()
         self._source: str = _SOURCES[0][0]
+        self._provider: str = _PROVIDERS[0][0]
         self._build()
 
     def _build(self) -> None:
@@ -57,14 +74,46 @@ class ConfigureScreen:
         )
 
         # ── Source segmented button ──────────────────────────────────────────
+        # "Code" bị disable tạm (xem TODO ở đầu file); hover hiện tooltip.
         self._source_seg = ft.SegmentedButton(
             selected=[_SOURCES[0][0]],
             show_selected_icon=True,
             segments=[
-                ft.Segment(value=v, label=ft.Text(lbl), icon=ft.Icon(ic))
+                ft.Segment(
+                    value=v,
+                    label=ft.Text(lbl),
+                    icon=ft.Icon(ic),
+                    disabled=v in _DISABLED_SOURCES,
+                    tooltip=_DISABLED_TOOLTIP if v in _DISABLED_SOURCES else None,
+                )
                 for v, lbl, ic in _SOURCES
             ],
             on_change=self._on_source_change,
+        )
+
+        # ── LLM Provider ──────────────────────────────────────────────────────
+        self._provider_seg = ft.SegmentedButton(
+            selected=[_PROVIDERS[0][0]],
+            show_selected_icon=True,
+            segments=[
+                ft.Segment(value=v, label=ft.Text(lbl), icon=ft.Icon(ic))
+                for v, lbl, ic in _PROVIDERS
+            ],
+            on_change=self._on_provider_change,
+        )
+        self._ccs_profile = ft.TextField(
+            label="CCS profile (NAME)",
+            hint_text="vd: one",
+            dense=True,
+            filled=True,
+            border_radius=T.RADIUS_SM,
+            prefix_icon=ft.Icons.BADGE_OUTLINED,
+        )
+        # Chỉ hiện ô profile khi provider = CCS.
+        self._ccs_profile_box = ft.Container(
+            content=self._ccs_profile,
+            visible=False,
+            padding=T.pad(top=T.SM),
         )
 
         # ── Tùy chọn nâng cao ─────────────────────────────────────────────────
@@ -135,6 +184,12 @@ class ConfigureScreen:
                 T.section_label("Nguồn log"),
                 T.gap(T.SM),
                 self._source_seg,
+                T.gap(T.LG),
+
+                T.section_label("LLM Provider"),
+                T.gap(T.SM),
+                self._provider_seg,
+                self._ccs_profile_box,
                 T.gap(T.MD),
 
                 adv_tile,
@@ -208,6 +263,15 @@ class ConfigureScreen:
         if selected:
             self._source = next(iter(selected))
 
+    def _on_provider_change(self, e) -> None:
+        selected = e.control.selected
+        if selected:
+            self._provider = next(iter(selected))
+        # Ô profile chỉ hiện với CCS.
+        self._ccs_profile_box.visible = self._provider == "ccs"
+        self._ccs_profile.error = None
+        self._page.update()
+
     def _toggle_theme(self, e) -> None:
         if self._page.theme_mode == ft.ThemeMode.DARK:
             self._page.theme_mode = ft.ThemeMode.LIGHT
@@ -218,6 +282,14 @@ class ConfigureScreen:
         self._page.update()
 
     def _on_run_click(self, e) -> None:
+        ccs_profile = (self._ccs_profile.value or "").strip()
+        # CCS bắt buộc có profile NAME.
+        if self._provider == "ccs" and not ccs_profile:
+            self._ccs_profile.error = ft.Text("Nhập tên profile CCS")
+            self._page.update()
+            return
+        self._ccs_profile.error = None
+
         try:
             min_rec = int(self._min_rec.value or "2")
             max_dd = int(self._max_dd.value or "5")
@@ -229,4 +301,6 @@ class ConfigureScreen:
             source=self._source,
             min_recurrence=min_rec,
             max_deepdive=max_dd,
+            provider=self._provider,
+            ccs_profile=ccs_profile,
         )
